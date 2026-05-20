@@ -3,13 +3,20 @@ import type {
   CreateTransactionInput,
   DateFilter,
   ExchangeRate,
+  GetRateHistoryOptions,
   LoginResult,
+  RateChangeLogEntry,
+  RegisterUserInput,
+  UpdateAdminCredentialsInput,
   SaveRateInput,
+  User,
   SessionStatus,
   SupportedCurrency,
-  Transaction
+  Transaction,
+  UserListEntry
 } from '../database/types'
 import type { PrintResult, PrinterSettings } from '../shared/printer-types'
+import type { UpdateState } from '../shared/updater-types'
 import { SESSION_EXPIRED_CODE } from '../shared/auth-constants'
 
 export interface ExchangeApi {
@@ -17,6 +24,25 @@ export interface ExchangeApi {
   logout: () => Promise<void>
   restoreSession: () => Promise<SessionStatus>
   getSessionStatus: () => Promise<SessionStatus>
+  listUsers: () => Promise<
+    | { success: true; data: UserListEntry[] }
+    | { success: false; error: string; code?: string }
+  >
+  createUser: (
+    input: RegisterUserInput
+  ) => Promise<
+    | { success: true; data: UserListEntry }
+    | { success: false; error: string; code?: string }
+  >
+  updateAdminCredentials: (
+    input: UpdateAdminCredentialsInput
+  ) => Promise<
+    | { success: true; data: User }
+    | { success: false; error: string; code?: string }
+  >
+  deleteUser: (
+    userId: number
+  ) => Promise<{ success: true } | { success: false; error: string; code?: string }>
   onSessionExpired: (callback: () => void) => () => void
   getLiveRates: () => Promise<ExchangeRate[] | SessionExpiredResponse>
   onRatesUpdated: (callback: (rates: ExchangeRate[]) => void) => () => void
@@ -28,6 +54,9 @@ export interface ExchangeApi {
     | { success: false; error: string; code?: string }
   >
   getRate: (currency: SupportedCurrency) => Promise<ExchangeRate | null | SessionExpiredResponse>
+  getRateChangeHistory: (
+    options?: GetRateHistoryOptions
+  ) => Promise<RateChangeLogEntry[] | SessionExpiredResponse>
   createTransaction: (
     input: CreateTransactionInput
   ) => Promise<
@@ -35,6 +64,13 @@ export interface ExchangeApi {
     | { success: false; error: string; code?: string }
   >
   getTransactions: (filter?: DateFilter) => Promise<Transaction[] | SessionExpiredResponse>
+  voidTransaction: (
+    transactionId: number,
+    reason: string
+  ) => Promise<
+    | { success: true; data: Transaction }
+    | { success: false; error: string; code?: string }
+  >
   getPrinterSettings: () => Promise<PrinterSettings | SessionExpiredResponse>
   savePrinterSettings: (
     settings: PrinterSettings
@@ -44,6 +80,10 @@ export interface ExchangeApi {
   >
   listPrinters: () => Promise<string[] | SessionExpiredResponse>
   printReceipt: (transaction: Transaction) => Promise<PrintResult | SessionExpiredResponse>
+  getUpdateState: () => Promise<UpdateState>
+  checkForUpdates: () => Promise<UpdateState>
+  installUpdate: () => Promise<{ success: boolean }>
+  onUpdateState: (callback: (state: UpdateState) => void) => () => void
 }
 
 type SessionExpiredResponse = { code: typeof SESSION_EXPIRED_CODE; message: string }
@@ -137,6 +177,11 @@ const api: ExchangeApi = {
     return { valid: false }
   },
 
+  listUsers: () => invokeWithSession('users:list'),
+  createUser: (input) => invokeWithSession('users:create', input),
+  updateAdminCredentials: (input) => invokeWithSession('users:updateAdminCredentials', input),
+  deleteUser: (userId) => invokeWithSession('users:delete', userId),
+
   getSessionStatus: async () => {
     if (!sessionToken) {
       return { valid: false }
@@ -166,12 +211,25 @@ const api: ExchangeApi = {
   getAllRates: () => invokeWithSession<ExchangeRate[]>('rates:getAll'),
   saveRate: (input) => invokeWithSession('rates:save', input),
   getRate: (currency) => invokeWithSession('rates:get', currency),
+  getRateChangeHistory: (options) => invokeWithSession('rates:getHistory', options ?? {}),
   createTransaction: (input) => invokeWithSession('transactions:create', input),
   getTransactions: (filter) => invokeWithSession('transactions:getAll', filter),
+  voidTransaction: (transactionId, reason) =>
+    invokeWithSession('transactions:void', transactionId, reason),
   getPrinterSettings: () => invokeWithSession<PrinterSettings>('printer:getSettings'),
   savePrinterSettings: (settings) => invokeWithSession('printer:saveSettings', settings),
   listPrinters: () => invokeWithSession<string[]>('printer:list'),
-  printReceipt: (transaction) => invokeWithSession<PrintResult>('printer:printReceipt', transaction)
+  printReceipt: (transaction) => invokeWithSession<PrintResult>('printer:printReceipt', transaction),
+  getUpdateState: () => ipcRenderer.invoke('update:getState'),
+  checkForUpdates: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdateState: (callback) => {
+    const listener = (_event: Electron.IpcRendererEvent, state: UpdateState): void => {
+      callback(state)
+    }
+    ipcRenderer.on('update:state', listener)
+    return () => ipcRenderer.removeListener('update:state', listener)
+  }
 }
 
 contextBridge.exposeInMainWorld('api', api)

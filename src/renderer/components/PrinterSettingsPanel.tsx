@@ -4,7 +4,9 @@ import type { PrinterSettings } from '../../shared/printer-types'
 export function PrinterSettingsPanel(): React.JSX.Element {
   const [settings, setSettings] = useState<PrinterSettings>({
     printerName: '',
-    printEnabled: true
+    printEnabled: true,
+    bureauName: 'KEMBIM VALUTOR',
+    city: 'Durres'
   })
   const [printers, setPrinters] = useState<string[]>([])
   const [loading, setLoading] = useState(true)
@@ -61,9 +63,8 @@ export function PrinterSettingsPanel(): React.JSX.Element {
     <section className="mx-auto max-w-xl">
       <h3 className="mb-2 text-base font-semibold text-slate-800">Thermal receipt printer</h3>
       <p className="mb-4 text-sm text-slate-600">
-        Connect your USB thermal printer and install its driver. Select the exact printer name
-        from the list (macOS: System Settings → Printers; Windows: Settings → Printers). Receipts
-        are sent as RAW ESC/POS — not through the normal PDF print dialog.
+        Receipts print as Albanian <strong>Mandat Konvertim Valute</strong> (invoice number, Shuma /
+        Kursi / Shuma e Konvert., boxed total, city and date). Configure your bureau name below.
       </p>
 
       <form
@@ -80,9 +81,38 @@ export function PrinterSettingsPanel(): React.JSX.Element {
           Print receipt after each transaction
         </label>
 
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="bureau-name" className="mb-1.5 block text-sm font-medium text-slate-700">
+              Bureau name (header)
+            </label>
+            <input
+              id="bureau-name"
+              type="text"
+              value={settings.bureauName}
+              onChange={(e) => setSettings((s) => ({ ...s, bureauName: e.target.value }))}
+              placeholder="KEMBIM VALUTOR"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+            />
+          </div>
+          <div>
+            <label htmlFor="city" className="mb-1.5 block text-sm font-medium text-slate-700">
+              City (footer)
+            </label>
+            <input
+              id="city"
+              type="text"
+              value={settings.city}
+              onChange={(e) => setSettings((s) => ({ ...s, city: e.target.value }))}
+              placeholder="Durres"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+            />
+          </div>
+        </div>
+
         <div>
           <label htmlFor="printer-name" className="mb-1.5 block text-sm font-medium text-slate-700">
-            Printer name (as shown in Windows)
+            Printer name
           </label>
           {printers.length > 0 ? (
             <select

@@ -12,12 +12,14 @@ import type { User } from '../../database/types'
 
 interface AuthContextValue {
   user: User | null
+  isAdmin: boolean
   isAuthenticated: boolean
   isRestoring: boolean
   sessionExpiresAt: number | null
   sessionExpiredMessage: string | null
   login: (username: string, password: string) => Promise<string | null>
   logout: () => Promise<void>
+  setCurrentUser: (user: User) => void
   clearSessionExpiredMessage: () => void
 }
 
@@ -92,6 +94,10 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
     setSessionExpiredMessage(null)
   }, [])
 
+  const setCurrentUser = useCallback((nextUser: User) => {
+    setUser(nextUser)
+  }, [])
+
   useEffect(() => {
     async function restore(): Promise<void> {
       if (!window.api?.restoreSession) {
@@ -124,15 +130,26 @@ export function AuthProvider({ children }: { children: ReactNode }): React.JSX.E
   const value = useMemo(
     () => ({
       user,
+      isAdmin: user?.role === 'admin',
       isAuthenticated: user !== null,
       isRestoring,
       sessionExpiresAt,
       sessionExpiredMessage,
       login,
       logout,
+      setCurrentUser,
       clearSessionExpiredMessage
     }),
-    [user, isRestoring, sessionExpiresAt, sessionExpiredMessage, login, logout, clearSessionExpiredMessage]
+    [
+      user,
+      isRestoring,
+      sessionExpiresAt,
+      sessionExpiredMessage,
+      login,
+      logout,
+      setCurrentUser,
+      clearSessionExpiredMessage
+    ]
   )
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>

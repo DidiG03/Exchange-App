@@ -33,3 +33,64 @@ export function migrateTransactionsTable(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_transactions_created_at ON transactions (created_at DESC);
   `)
 }
+
+export function migrateTransactionVoidColumns(database: Database.Database): void {
+  const columns = database.prepare('PRAGMA table_info(transactions)').all() as { name: string }[]
+  const names = new Set(columns.map((c) => c.name))
+
+  if (!names.has('voided_at')) {
+    database.exec('ALTER TABLE transactions ADD COLUMN voided_at TEXT')
+  }
+  if (!names.has('voided_by_user_id')) {
+    database.exec('ALTER TABLE transactions ADD COLUMN voided_by_user_id INTEGER')
+  }
+  if (!names.has('voided_by_username')) {
+    database.exec('ALTER TABLE transactions ADD COLUMN voided_by_username TEXT')
+  }
+  if (!names.has('void_reason')) {
+    database.exec('ALTER TABLE transactions ADD COLUMN void_reason TEXT')
+  }
+}
+
+export function migrateUserRoles(database: Database.Database): void {
+  const columns = database.prepare('PRAGMA table_info(users)').all() as { name: string }[]
+  const names = new Set(columns.map((c) => c.name))
+
+  if (!names.has('role')) {
+    database.exec("ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'staff'")
+  }
+
+  database.exec("UPDATE users SET role = 'admin' WHERE username = 'admin' AND role != 'admin'")
+  database.exec("UPDATE users SET role = 'staff' WHERE role IS NULL OR role = ''")
+}
+
+export function migrateTransactionCreatorColumns(database: Database.Database): void {
+  const columns = database.prepare('PRAGMA table_info(transactions)').all() as { name: string }[]
+  const names = new Set(columns.map((c) => c.name))
+
+  if (!names.has('created_by_user_id')) {
+    database.exec('ALTER TABLE transactions ADD COLUMN created_by_user_id INTEGER')
+  }
+  if (!names.has('created_by_username')) {
+    database.exec('ALTER TABLE transactions ADD COLUMN created_by_username TEXT')
+  }
+}
+
+export function migrateRateChangeLogTable(database: Database.Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS rate_change_log (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      currency TEXT NOT NULL,
+      previous_buy_rate REAL,
+      previous_sell_rate REAL,
+      new_buy_rate REAL NOT NULL,
+      new_sell_rate REAL NOT NULL,
+      changed_by_user_id INTEGER NOT NULL,
+      changed_by_username TEXT NOT NULL,
+      changed_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_rate_change_log_changed_at ON rate_change_log (changed_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_rate_change_log_currency ON rate_change_log (currency, changed_at DESC);
+  `)
+}

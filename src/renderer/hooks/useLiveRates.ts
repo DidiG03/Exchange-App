@@ -1,12 +1,10 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { ExchangeRate, SupportedCurrency } from '../../database/types'
 import { isSessionExpiredResponse } from '../utils/session'
 
-const CURRENCIES: SupportedCurrency[] = ['EUR', 'GBP', 'USD']
-
 export interface LiveRatesState {
   rates: ExchangeRate[]
-  ratesByCurrency: Record<SupportedCurrency, ExchangeRate | null>
+  ratesByCurrency: Partial<Record<SupportedCurrency, ExchangeRate>>
   loading: boolean
   refresh: () => Promise<void>
 }
@@ -34,13 +32,13 @@ export function useLiveRates(): LiveRatesState {
     })
   }, [refresh])
 
-  const ratesByCurrency = CURRENCIES.reduce(
-    (acc, code) => {
-      acc[code] = rates.find((r) => r.currency === code) ?? null
-      return acc
-    },
-    {} as Record<SupportedCurrency, ExchangeRate | null>
-  )
+  const ratesByCurrency = useMemo(() => {
+    const map: Partial<Record<SupportedCurrency, ExchangeRate>> = {}
+    for (const rate of rates) {
+      map[rate.currency] = rate
+    }
+    return map
+  }, [rates])
 
   return { rates, ratesByCurrency, loading, refresh }
 }

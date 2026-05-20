@@ -20,7 +20,7 @@ export function LoginPage(): React.JSX.Element {
 
   if (isRestoring) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-navy-900 text-sm text-slate-300">
+      <div className="flex h-full items-center justify-center bg-navy-900 text-sm text-slate-300">
         Restoring session…
       </div>
     )
@@ -50,7 +50,7 @@ export function LoginPage(): React.JSX.Element {
   }
 
   return (
-    <div className="flex min-h-screen items-center justify-center bg-navy-900 px-4">
+    <div className="flex h-full items-center justify-center bg-navy-900 px-4">
       <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl">
         <div className="mb-8 text-center">
           <h1 className="text-2xl font-bold text-slate-900">Exchange Bureau</h1>

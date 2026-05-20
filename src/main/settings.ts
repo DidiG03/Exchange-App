@@ -5,7 +5,9 @@ import type { PrinterSettings } from '../shared/printer-types'
 
 const DEFAULT_SETTINGS: PrinterSettings = {
   printerName: '',
-  printEnabled: true
+  printEnabled: true,
+  bureauName: 'KEMBIM VALUTOR',
+  city: 'Durres'
 }
 
 function getSettingsPath(): string {
@@ -27,7 +29,15 @@ export function getPrinterSettings(): PrinterSettings {
     const parsed = JSON.parse(raw) as Partial<PrinterSettings>
     return {
       printerName: typeof parsed.printerName === 'string' ? parsed.printerName : '',
-      printEnabled: parsed.printEnabled !== false
+      printEnabled: parsed.printEnabled !== false,
+      bureauName:
+        typeof parsed.bureauName === 'string' && parsed.bureauName.trim()
+          ? parsed.bureauName.trim()
+          : DEFAULT_SETTINGS.bureauName,
+      city:
+        typeof parsed.city === 'string' && parsed.city.trim()
+          ? parsed.city.trim()
+          : DEFAULT_SETTINGS.city
     }
   } catch {
     return { ...DEFAULT_SETTINGS }
@@ -37,7 +47,9 @@ export function getPrinterSettings(): PrinterSettings {
 export function savePrinterSettings(settings: PrinterSettings): PrinterSettings {
   const normalized: PrinterSettings = {
     printerName: settings.printerName.trim(),
-    printEnabled: settings.printEnabled
+    printEnabled: settings.printEnabled,
+    bureauName: settings.bureauName.trim() || DEFAULT_SETTINGS.bureauName,
+    city: settings.city.trim() || DEFAULT_SETTINGS.city
   }
   writeFileSync(getSettingsPath(), JSON.stringify(normalized, null, 2), {
     encoding: 'utf8',

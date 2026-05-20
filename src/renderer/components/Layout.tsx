@@ -7,7 +7,7 @@ const navItems = [
   { to: '/', label: 'Exchange', end: true },
   { to: '/rates', label: 'Rates', end: false },
   { to: '/history', label: 'History', end: false },
-  { to: '/settings', label: 'Printer', end: false }
+  { to: '/settings', label: 'Settings', end: false }
 ]
 
 function navClassName({ isActive }: { isActive: boolean }): string {
@@ -31,12 +31,12 @@ export function Layout(): React.JSX.Element {
         : location.pathname.startsWith('/history')
           ? 'History'
           : location.pathname.startsWith('/settings')
-            ? 'Printer'
+            ? 'Settings'
             : 'Exchange Bureau'
 
   return (
-    <div className="flex min-h-screen">
-      <aside className="flex w-56 shrink-0 flex-col bg-navy-900 text-white">
+    <div className="flex h-screen overflow-hidden">
+      <aside className="flex h-full w-56 shrink-0 flex-col overflow-hidden bg-navy-900 text-white">
         <div className="border-b border-white/10 px-5 py-6">
           <h1 className="text-lg font-semibold tracking-tight">Exchange Bureau</h1>
           <p className="mt-1 text-xs text-slate-400">Albania · ALL base</p>
@@ -52,7 +52,14 @@ export function Layout(): React.JSX.Element {
 
         <div className="border-t border-white/10 px-4 py-4">
           <p className="truncate text-xs text-slate-400">Signed in as</p>
-          <p className="truncate text-sm font-medium">{user?.username}</p>
+          <p className="truncate text-sm font-medium">
+            {user?.username}
+            {user?.role === 'admin' && (
+              <span className="ml-1.5 rounded bg-white/15 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-slate-300">
+                Admin
+              </span>
+            )}
+          </p>
           <SessionBadge />
           <button
             type="button"
@@ -64,12 +71,12 @@ export function Layout(): React.JSX.Element {
         </div>
       </aside>
 
-      <main className="flex min-w-0 flex-1 flex-col">
-        <header className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-8 py-4">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <header className="flex shrink-0 flex-wrap items-center justify-between gap-4 border-b border-slate-200 bg-white px-8 py-4">
           <h2 className="text-lg font-semibold text-slate-800">{pageTitle}</h2>
           <LiveRatesPanel />
         </header>
-        <div className="flex-1 overflow-auto p-8">
+        <div className="min-h-0 flex-1 overflow-y-auto p-8">
           <Outlet />
         </div>
       </main>

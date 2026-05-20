@@ -1,9 +1,9 @@
 import { FormEvent, useEffect, useState } from 'react'
 import type { SupportedCurrency } from '../../database/types'
+import { CurrencySelect } from '../components/CurrencySelect'
+import { RateChangeHistory } from '../components/RateChangeHistory'
 import { useLiveRates } from '../hooks/useLiveRates'
 import { formatDateTime, formatRate } from '../utils/format'
-
-const CURRENCIES: SupportedCurrency[] = ['EUR', 'GBP', 'USD']
 
 export function RatesPage(): React.JSX.Element {
   const { rates, loading } = useLiveRates()
@@ -13,6 +13,7 @@ export function RatesPage(): React.JSX.Element {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState<string | null>(null)
+  const [historyRefreshKey, setHistoryRefreshKey] = useState(0)
 
   useEffect(() => {
     const existing = rates.find((r) => r.currency === currency)
@@ -52,6 +53,7 @@ export function RatesPage(): React.JSX.Element {
     }
 
     setSuccess(`Rates for ${currency} saved. Header updates automatically.`)
+    setHistoryRefreshKey((k) => k + 1)
     setTimeout(() => setSuccess(null), 3000)
   }
 
@@ -73,18 +75,12 @@ export function RatesPage(): React.JSX.Element {
             <label htmlFor="rate-currency" className="mb-1.5 block text-sm font-medium text-slate-700">
               Currency
             </label>
-            <select
+            <CurrencySelect
               id="rate-currency"
               value={currency}
-              onChange={(e) => setCurrency(e.target.value as SupportedCurrency)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
-            >
-              {CURRENCIES.map((code) => (
-                <option key={code} value={code}>
-                  {code} / ALL
-                </option>
-              ))}
-            </select>
+              onChange={setCurrency}
+              suffix=" / ALL"
+            />
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2">
@@ -175,6 +171,8 @@ export function RatesPage(): React.JSX.Element {
           </div>
         )}
       </section>
+
+      <RateChangeHistory refreshKey={historyRefreshKey} />
     </div>
   )
 }

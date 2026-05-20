@@ -30,7 +30,10 @@ export function loadPersistedSession(): Session | null {
       typeof parsed.token !== 'string' ||
       typeof parsed.userId !== 'number' ||
       typeof parsed.username !== 'string' ||
-      typeof parsed.expiresAt !== 'number'
+      typeof parsed.expiresAt !== 'number' ||
+      (parsed.role !== undefined &&
+        parsed.role !== 'admin' &&
+        parsed.role !== 'staff')
     ) {
       clearPersistedSession()
       return null

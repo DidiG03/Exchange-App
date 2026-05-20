@@ -4,39 +4,100 @@ import { join } from 'path'
 import { tmpdir } from 'os'
 import { CharacterSet, BreakLine, PrinterTypes, ThermalPrinter } from 'node-thermal-printer'
 import type { Transaction } from '../database/types'
-import { formatReceiptLines } from './receipt-format'
+import type { ReceiptDocument } from '../shared/printer-types'
+import {
+  buildReceiptDocument,
+  centerInBox,
+  type BureauReceiptConfig
+} from './receipt-format'
+import { getPrinterSettings } from './settings'
 import { loadPrinterDriver } from './printer-driver'
 
+const LINE_WIDTH = 48
+const BOX_WIDTH = 40
+
+function printMandatReceipt(printer: ThermalPrinter, doc: ReceiptDocument): void {
+  printer.alignLeft()
+  printer.bold(true)
+  printer.println(doc.bureauName)
+  printer.bold(false)
+
+  printer.println('.'.repeat(LINE_WIDTH))
+  printer.alignCenter()
+  printer.bold(true)
+  printer.println(doc.mandatTitle)
+  printer.bold(false)
+  printer.alignLeft()
+  printer.newLine()
+
+  if (doc.voidBanner) {
+    printer.alignCenter()
+    printer.bold(true)
+    printer.println(doc.voidBanner)
+    printer.bold(false)
+    printer.alignLeft()
+    if (doc.voidDetail) {
+      for (const line of doc.voidDetail.split('\n')) {
+        printer.println(line)
+      }
+    }
+    printer.newLine()
+  }
+
+  printer.println(doc.invoiceLine)
+  printer.println(doc.clientLine)
+  printer.newLine()
+
+  printer.println(
+    padColumns('Shuma', 'Kursi', 'Shuma e Konvert.')
+  )
+  printer.println(padColumns(doc.shuma, doc.kursi, doc.shumaKonvertuar))
+  printer.newLine()
+
+  const boxLine = '-'.repeat(BOX_WIDTH)
+  const centered = centerInBox(doc.totalBox, BOX_WIDTH)
+
+  printer.alignCenter()
+  printer.println(`+${boxLine}+`)
+  printer.bold(true)
+  printer.println(`|${centered}|`)
+  printer.bold(false)
+  printer.println(`+${boxLine}+`)
+  printer.newLine()
+
+  printer.alignLeft()
+  printer.println(doc.footer)
+  printer.newLine()
+}
+
+function padColumns(a: string, b: string, c: string): string {
+  const w1 = 14
+  const w2 = 8
+  const w3 = 22
+  const p = (t: string, w: number) => (t.length >= w ? t.slice(0, w) : t + ' '.repeat(w - t.length))
+  return p(a, w1) + p(b, w2) + p(c, w3)
+}
+
 function buildEscPosBuffer(tx: Transaction): Buffer {
+  const settings = getPrinterSettings()
+  const config: BureauReceiptConfig = {
+    bureauName: settings.bureauName,
+    city: settings.city
+  }
+  const doc = buildReceiptDocument(tx, config)
+
   const stubPath = join(tmpdir(), 'exchange-bureau-escpos.stub')
   const printer = new ThermalPrinter({
     type: PrinterTypes.EPSON,
     interface: stubPath,
     characterSet: CharacterSet.PC852_LATIN2,
     removeSpecialCharacters: false,
-    lineCharacter: '-',
+    lineCharacter: '.',
     breakLine: BreakLine.WORD,
-    width: 48
+    width: LINE_WIDTH
   })
 
-  const lines = formatReceiptLines(tx)
-
-  printer.alignCenter()
-  printer.bold(true)
-  printer.println(lines[0])
-  printer.println(lines[1])
-  printer.bold(false)
-  printer.drawLine()
-
-  printer.alignLeft()
-  for (let i = 3; i < lines.length - 2; i++) {
-    printer.println(lines[i])
-  }
-
-  printer.drawLine()
-  printer.alignCenter()
-  printer.println(lines[lines.length - 2])
-  printer.newLine()
+  printMandatReceipt(printer, doc)
   printer.cut()
 
   return printer.getBuffer()
@@ -56,7 +117,7 @@ function sendRawOnMac(printerName: string, buffer: Buffer): void {
     try {
       unlinkSync(tmpFile)
     } catch {
-      // ignore cleanup errors
+      // ignore
     }
   }
 }

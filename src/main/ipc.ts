@@ -1,16 +1,27 @@
 import { BrowserWindow, ipcMain } from 'electron'
 import {
+  assertAdmin,
   createTransaction,
+  createUser,
+  deleteUser,
+  updateAdminCredentials,
   getAllRates,
   getRate,
+  getRateChangeHistory,
   getTransactions,
+  getUserById,
+  listUsers,
   login,
-  saveRate
+  saveRate,
+  voidTransaction
 } from '../database'
 import type { ExchangeRate } from '../database/types'
 import type {
   CreateTransactionInput,
   DateFilter,
+  GetRateHistoryOptions,
+  RegisterUserInput,
+  UpdateAdminCredentialsInput,
   SaveRateInput,
   SupportedCurrency
 } from '../database/types'
@@ -27,8 +38,10 @@ import {
   destroySession,
   getSessionStatus,
   purgeExpiredSessions,
-  restorePersistedSession
+  restorePersistedSession,
+  updateSessionUser
 } from './session'
+import { checkForUpdates, getUpdateState, quitAndInstall } from './updater'
 import type { PrinterSettings } from '../shared/printer-types'
 import type { Transaction } from '../database/types'
 
@@ -65,16 +78,25 @@ const IPC_CHANNELS = [
   'auth:logout',
   'auth:status',
   'auth:restore',
+  'users:list',
+  'users:create',
+  'users:updateAdminCredentials',
+  'users:delete',
   'rates:getAll',
   'rates:getLive',
   'rates:save',
   'rates:get',
+  'rates:getHistory',
   'transactions:create',
   'transactions:getAll',
+  'transactions:void',
   'printer:getSettings',
   'printer:saveSettings',
   'printer:list',
-  'printer:printReceipt'
+  'printer:printReceipt',
+  'update:getState',
+  'update:check',
+  'update:install'
 ] as const
 
 let purgeInterval: ReturnType<typeof setInterval> | null = null
@@ -121,10 +143,92 @@ export function registerIpcHandlers(): void {
 
     return {
       valid: true,
-      user: { id: session.userId, username: session.username },
+      user: { id: session.userId, username: session.username, role: session.role },
       expiresAt: session.expiresAt,
       remainingMs: session.expiresAt - Date.now(),
       sessionToken: session.token
+    }
+  })
+
+  ipcMain.handle('users:list', (_event, token: unknown) => {
+    try {
+      const session = requireSession(token)
+      const user = getUserById(session.userId)
+      if (!user) {
+        return { success: false, error: 'User not found' }
+      }
+      assertAdmin(user)
+      return { success: true, data: listUsers() }
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to list users'
+      }
+    }
+  })
+
+  ipcMain.handle('users:create', (_event, token: unknown, input: RegisterUserInput) => {
+    try {
+      const session = requireSession(token)
+      const user = getUserById(session.userId)
+      if (!user) {
+        return { success: false, error: 'User not found' }
+      }
+      assertAdmin(user)
+      const data = createUser(input)
+      return { success: true, data }
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to create user'
+      }
+    }
+  })
+
+  ipcMain.handle(
+    'users:updateAdminCredentials',
+    (_event, token: unknown, input: UpdateAdminCredentialsInput) => {
+      try {
+        const session = requireSession(token)
+        const data = updateAdminCredentials(session.userId, input)
+        updateSessionUser(token, data)
+        return { success: true, data }
+      } catch (error) {
+        if (error instanceof SessionExpiredError) {
+          return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+        }
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to update credentials'
+        }
+      }
+    }
+  )
+
+  ipcMain.handle('users:delete', (_event, token: unknown, targetUserId: number) => {
+    try {
+      const session = requireSession(token)
+      const user = getUserById(session.userId)
+      if (!user) {
+        return { success: false, error: 'User not found' }
+      }
+      assertAdmin(user)
+      deleteUser(targetUserId, session.userId)
+      return { success: true }
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to delete user'
+      }
     }
   })
 
@@ -142,8 +246,11 @@ export function registerIpcHandlers(): void {
 
   ipcMain.handle('rates:save', (_event, token: unknown, input: SaveRateInput) => {
     try {
-      requireSession(token)
-      const data = saveRate(input)
+      const session = requireSession(token)
+      const data = saveRate(input, {
+        userId: session.userId,
+        username: session.username
+      })
       broadcastLiveRates()
       return { success: true, data }
     } catch (error) {
@@ -163,12 +270,22 @@ export function registerIpcHandlers(): void {
     return result
   })
 
+  ipcMain.handle('rates:getHistory', (_event, token: unknown, options?: GetRateHistoryOptions) => {
+    const result = withSession(token, () => getRateChangeHistory(options ?? {}))
+    if (result && typeof result === 'object' && 'code' in result) return result
+    return result
+  })
+
   ipcMain.handle(
     'transactions:create',
     (_event, token: unknown, input: CreateTransactionInput) => {
       try {
-        requireSession(token)
-        return { success: true, data: createTransaction(input) }
+        const session = requireSession(token)
+        const data = createTransaction(input, {
+          userId: session.userId,
+          username: session.username
+        })
+        return { success: true, data }
       } catch (error) {
         if (error instanceof SessionExpiredError) {
           return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
@@ -186,6 +303,28 @@ export function registerIpcHandlers(): void {
     if (result && typeof result === 'object' && 'code' in result) return result
     return result
   })
+
+  ipcMain.handle(
+    'transactions:void',
+    (_event, token: unknown, transactionId: number, reason: string) => {
+      try {
+        const session = requireSession(token)
+        const data = voidTransaction(transactionId, {
+          userId: session.userId,
+          username: session.username
+        }, reason)
+        return { success: true, data }
+      } catch (error) {
+        if (error instanceof SessionExpiredError) {
+          return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+        }
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to void transaction'
+        }
+      }
+    }
+  )
 
   ipcMain.handle('printer:getSettings', (_event, token: unknown) => {
     const result = withSession(token, () => getPrinterSettings())
@@ -227,5 +366,14 @@ export function registerIpcHandlers(): void {
         error: error instanceof Error ? error.message : 'Failed to print receipt'
       }
     }
+  })
+
+  ipcMain.handle('update:getState', () => getUpdateState())
+
+  ipcMain.handle('update:check', async () => checkForUpdates())
+
+  ipcMain.handle('update:install', async () => {
+    await quitAndInstall()
+    return { success: true }
   })
 }

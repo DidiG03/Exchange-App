@@ -1,82 +1,153 @@
-import type { Transaction, TransactionType } from '../database/types'
+import type { Transaction } from '../database/types'
+import type { ReceiptDocument } from '../shared/printer-types'
 
-const LINE_WIDTH = 42
+const LINE_WIDTH = 48
+const COL_SHUMA = 14
+const COL_KURSI = 8
+const COL_KONVERT = 22
+
+export interface BureauReceiptConfig {
+  bureauName: string
+  city: string
+}
+
+function padRight(text: string, width: number): string {
+  if (text.length >= width) return text.slice(0, width)
+  return text + ' '.repeat(width - text.length)
+}
 
 function padLine(left: string, right: string): string {
   const gap = LINE_WIDTH - left.length - right.length
-  if (gap >= 1) {
-    return left + ' '.repeat(gap) + right
-  }
+  if (gap >= 1) return left + ' '.repeat(gap) + right
   return `${left} ${right}`
 }
 
-function formatAmount(value: number, decimals: number): string {
-  return new Intl.NumberFormat('en-US', {
-    minimumFractionDigits: decimals,
-    maximumFractionDigits: decimals
-  }).format(value)
+/** Albanian style: 1.097.868,50 */
+export function formatAlbanianNumber(value: number, decimals: number): string {
+  const rounded =
+    decimals === 0 ? Math.round(value) : Math.round(value * 10 ** decimals) / 10 ** decimals
+  const [intPart, decPart] = rounded.toFixed(decimals).split('.')
+  const withThousands = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+  if (decimals === 0) return withThousands
+  return `${withThousands},${decPart}`
 }
 
-function formatAllPlain(amount: number): string {
-  return `${formatAmount(Math.round(amount), 0)} ALL`
+function formatKursi(rate: number): string {
+  return formatAlbanianNumber(rate, 1)
 }
 
-function formatForeignPlain(amount: number, currency: string): string {
-  return `${formatAmount(amount, 2)} ${currency}`
+function formatLek(amount: number, decimals = 0): string {
+  return `${formatAlbanianNumber(amount, decimals)} LEK`
 }
 
-function typeLabel(type: TransactionType): string {
-  if (type === 'cross') return 'CONVERT'
-  return type.toUpperCase()
+function formatCurrency(amount: number, currency: string, decimals = 2): string {
+  return `${formatAlbanianNumber(amount, decimals)} ${currency}`
 }
 
-function pairLabel(tx: Transaction): string {
-  if (tx.type === 'cross' && tx.to_currency) {
-    return `${tx.currency} -> ${tx.to_currency}`
+function formatColumns(shuma: string, kursi: string, konvert: string): string {
+  return padRight(shuma, COL_SHUMA) + padRight(kursi, COL_KURSI) + padRight(konvert, COL_KONVERT)
+}
+
+function formatDateParts(iso: string): { date: string; dateTime: string } {
+  const d = new Date(iso)
+  const date = d.toLocaleDateString('en-GB', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric'
+  })
+  const time = d.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false
+  })
+  return { date, dateTime: `${date} ${time}` }
+}
+
+function buildAmounts(tx: Transaction): {
+  shuma: string
+  kursi: string
+  shumaKonvertuar: string
+  totalBox: string
+} {
+  if (tx.type === 'buy') {
+    const shuma = formatCurrency(tx.amount_given, tx.currency, 0)
+    const kursi = formatKursi(tx.rate_applied)
+    const konvert = formatLek(tx.amount_received, 0)
+    const totalBox = formatLek(tx.amount_received, 2)
+    return { shuma, kursi, shumaKonvertuar: konvert, totalBox }
   }
-  return tx.currency
-}
 
-function formatGiven(tx: Transaction): string {
-  if (tx.type === 'sell') return formatAllPlain(tx.amount_given)
-  return formatForeignPlain(tx.amount_given, tx.currency)
-}
-
-function formatReceived(tx: Transaction): string {
-  if (tx.type === 'buy') return formatAllPlain(tx.amount_received)
-  if (tx.type === 'cross' && tx.to_currency) {
-    return formatForeignPlain(tx.amount_received, tx.to_currency)
+  if (tx.type === 'sell') {
+    const shuma = formatLek(tx.amount_given, 0)
+    const kursi = formatKursi(tx.rate_applied)
+    const konvert = formatCurrency(tx.amount_received, tx.currency, 0)
+    const totalBox = formatCurrency(tx.amount_received, tx.currency, 2)
+    return { shuma, kursi, shumaKonvertuar: konvert, totalBox }
   }
-  return formatForeignPlain(tx.amount_received, tx.currency)
+
+  const to = tx.to_currency ?? tx.currency
+  const shuma = formatCurrency(tx.amount_given, tx.currency, 0)
+  const kursi = formatKursi(tx.rate_applied)
+  const konvert = formatCurrency(tx.amount_received, to, 0)
+  const totalBox = formatCurrency(tx.amount_received, to, 2)
+  return { shuma, kursi, shumaKonvertuar: konvert, totalBox }
 }
 
-function formatRateLine(tx: Transaction): string {
-  if (tx.type === 'cross' && tx.to_currency) {
-    return `1 ${tx.currency} = ${formatAmount(tx.rate_applied, 4)} ${tx.to_currency}`
+export function buildReceiptDocument(
+  tx: Transaction,
+  config: BureauReceiptConfig
+): ReceiptDocument {
+  const { date, dateTime } = formatDateParts(tx.created_at)
+  const amounts = buildAmounts(tx)
+
+  const doc: ReceiptDocument = {
+    bureauName: config.bureauName.toUpperCase(),
+    mandatTitle: 'Mandat Konvertim Valute',
+    invoiceLine: padLine(`Nr. Fatures ${tx.id}`, `Data ${date}`),
+    clientLine: 'Klienti  .',
+    shuma: amounts.shuma,
+    kursi: amounts.kursi,
+    shumaKonvertuar: amounts.shumaKonvertuar,
+    totalBox: amounts.totalBox,
+    footer: `${config.city}, me ${dateTime}`
   }
-  return `${formatAmount(tx.rate_applied, 2)} ALL per 1 ${tx.currency}`
+
+  if (tx.voided_at) {
+    const voidWhen = formatDateParts(tx.voided_at).dateTime
+    doc.voidBanner = '*** ANULLUAR ***'
+    doc.voidDetail = [
+      `Arsye: ${tx.void_reason ?? ''}`,
+      `Operator: ${tx.voided_by_username ?? ''}`,
+      `Me: ${voidWhen}`
+    ].join('\n')
+  }
+
+  return doc
 }
 
-export function formatReceiptLines(tx: Transaction): string[] {
-  const when = new Intl.DateTimeFormat('en-GB', {
-    dateStyle: 'medium',
-    timeStyle: 'short'
-  }).format(new Date(tx.created_at))
-
+/** Legacy line list for debugging */
+export function formatReceiptLines(tx: Transaction, config: BureauReceiptConfig): string[] {
+  const doc = buildReceiptDocument(tx, config)
   return [
-    'EXCHANGE BUREAU',
-    'Albania',
-    '-'.repeat(LINE_WIDTH),
-    padLine('Receipt #', String(tx.id)),
-    padLine('Date', when),
-    padLine('Type', typeLabel(tx.type)),
-    padLine('Pair', pairLabel(tx)),
-    '-'.repeat(LINE_WIDTH),
-    padLine('Given', formatGiven(tx)),
-    padLine('Received', formatReceived(tx)),
-    padLine('Rate', formatRateLine(tx)),
-    '-'.repeat(LINE_WIDTH),
-    'Thank you for your business',
+    doc.bureauName,
+    '.'.repeat(LINE_WIDTH),
+    doc.mandatTitle,
+    doc.invoiceLine,
+    doc.clientLine,
+    '',
+    formatColumns('Shuma', 'Kursi', 'Shuma e Konvert.'),
+    formatColumns(doc.shuma, doc.kursi, doc.shumaKonvertuar),
+    doc.totalBox,
+    doc.footer,
     ''
   ]
+}
+
+export function centerInBox(text: string, width: number): string {
+  const inner = width - 2
+  const trimmed = text.length > inner ? text.slice(0, inner) : text
+  const pad = Math.max(0, inner - trimmed.length)
+  const left = Math.floor(pad / 2)
+  return ' '.repeat(left) + trimmed + ' '.repeat(pad - left)
 }

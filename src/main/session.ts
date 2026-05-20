@@ -1,5 +1,6 @@
 import { randomBytes } from 'crypto'
-import type { User } from '../database/types'
+import { getUserById } from '../database'
+import type { User, UserRole } from '../database/types'
 import { SESSION_TTL_MS } from '../shared/auth-constants'
 import { clearPersistedSession, loadPersistedSession, persistSession } from './session-store'
 
@@ -9,6 +10,7 @@ export interface Session {
   token: string
   userId: number
   username: string
+  role: UserRole
   expiresAt: number
 }
 
@@ -31,6 +33,34 @@ function registerSession(session: Session): Session {
   return session
 }
 
+function enrichSession(session: Session): Session | null {
+  if (session.role === 'admin' || session.role === 'staff') {
+    return session
+  }
+
+  const user = getUserById(session.userId)
+  if (!user) {
+    return null
+  }
+
+  const enriched: Session = {
+    ...session,
+    username: user.username,
+    role: user.role
+  }
+  sessions.set(enriched.token, enriched)
+  persistSession(enriched)
+  return enriched
+}
+
+function sessionToUser(session: Session): User {
+  return {
+    id: session.userId,
+    username: session.username,
+    role: session.role
+  }
+}
+
 export function createSession(user: User): Session {
   const token = randomBytes(32).toString('hex')
   const expiresAt = Date.now() + SESSION_TTL_MS
@@ -38,6 +68,7 @@ export function createSession(user: User): Session {
     token,
     userId: user.id,
     username: user.username,
+    role: user.role,
     expiresAt
   })
 }
@@ -61,8 +92,28 @@ export function validateSession(token: unknown): Session | null {
     return null
   }
 
-  sessions.set(session.token, session)
-  return session
+  const enriched = enrichSession(session)
+  if (!enriched) {
+    destroySession(token)
+    return null
+  }
+
+  sessions.set(enriched.token, enriched)
+  return enriched
+}
+
+export function updateSessionUser(token: unknown, user: User): Session | null {
+  const session = validateSession(token)
+  if (!session || session.userId !== user.id) {
+    return null
+  }
+
+  const updated: Session = {
+    ...session,
+    username: user.username,
+    role: user.role
+  }
+  return registerSession(updated)
 }
 
 export function destroySession(token: unknown): void {
@@ -80,7 +131,7 @@ export function getSessionStatus(token: unknown): SessionStatus {
 
   return {
     valid: true,
-    user: { id: session.userId, username: session.username },
+    user: sessionToUser(session),
     expiresAt: session.expiresAt,
     remainingMs: session.expiresAt - Date.now()
   }
@@ -98,8 +149,15 @@ export function restorePersistedSession(): Session | null {
     return null
   }
 
-  sessions.set(persisted.token, persisted)
-  return persisted
+  const enriched = enrichSession(persisted)
+  if (!enriched) {
+    clearPersistedSession()
+    sessions.delete(persisted.token)
+    return null
+  }
+
+  sessions.set(enriched.token, enriched)
+  return enriched
 }
 
 export function purgeExpiredSessions(): void {

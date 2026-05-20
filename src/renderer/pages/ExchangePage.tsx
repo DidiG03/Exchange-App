@@ -1,10 +1,10 @@
 import { FormEvent, useMemo, useState } from 'react'
+import { CURRENCY_CODES } from '../../shared/currencies'
 import type { SupportedCurrency, TransactionType } from '../../database/types'
+import { CurrencySelect } from '../components/CurrencySelect'
 import { useLiveRates } from '../hooks/useLiveRates'
 import { calculateConversion, calculateCrossConversion } from '../utils/exchange'
 import { formatAll, formatCrossRate, formatForeign, formatRate } from '../utils/format'
-
-const CURRENCIES: SupportedCurrency[] = ['EUR', 'GBP', 'USD']
 
 const TRANSACTION_TYPES: { value: TransactionType; label: string }[] = [
   { value: 'buy', label: 'Buy' },
@@ -107,8 +107,6 @@ export function ExchangePage(): React.JSX.Element {
     setTimeout(() => setSuccess(null), 4000)
   }
 
-  const toCurrencyOptions = CURRENCIES.filter((c) => c !== currency)
-
   return (
     <div className="mx-auto max-w-2xl">
       <p className="mb-6 text-sm text-slate-600">
@@ -164,41 +162,27 @@ export function ExchangePage(): React.JSX.Element {
               <label htmlFor="from-currency" className="mb-1.5 block text-sm font-medium text-slate-700">
                 From (customer gives)
               </label>
-              <select
+              <CurrencySelect
                 id="from-currency"
                 value={currency}
-                onChange={(e) => {
-                  const next = e.target.value as SupportedCurrency
+                onChange={(next) => {
                   setCurrency(next)
                   if (next === toCurrency) {
-                    setToCurrency(CURRENCIES.find((c) => c !== next) ?? 'USD')
+                    setToCurrency(CURRENCY_CODES.find((c) => c !== next) ?? 'USD')
                   }
                 }}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
-              >
-                {CURRENCIES.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
+              />
             </div>
             <div>
               <label htmlFor="to-currency" className="mb-1.5 block text-sm font-medium text-slate-700">
                 To (customer receives)
               </label>
-              <select
+              <CurrencySelect
                 id="to-currency"
                 value={toCurrency}
-                onChange={(e) => setToCurrency(e.target.value as SupportedCurrency)}
-                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
-              >
-                {toCurrencyOptions.map((code) => (
-                  <option key={code} value={code}>
-                    {code}
-                  </option>
-                ))}
-              </select>
+                exclude={currency}
+                onChange={setToCurrency}
+              />
             </div>
           </div>
         ) : (
@@ -206,18 +190,7 @@ export function ExchangePage(): React.JSX.Element {
             <label htmlFor="currency" className="mb-1.5 block text-sm font-medium text-slate-700">
               Currency
             </label>
-            <select
-              id="currency"
-              value={currency}
-              onChange={(e) => setCurrency(e.target.value as SupportedCurrency)}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
-            >
-              {CURRENCIES.map((code) => (
-                <option key={code} value={code}>
-                  {code}
-                </option>
-              ))}
-            </select>
+            <CurrencySelect id="currency" value={currency} onChange={setCurrency} />
           </div>
         )}
 
