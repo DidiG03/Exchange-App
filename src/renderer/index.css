@@ -11,4 +11,10 @@
   #root {
     @apply h-full;
   }
+
+  /* Long Settings page: skip painting off-screen sections while scrolling */
+  .settings-section {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 320px;
+  }
 }

@@ -91,7 +91,7 @@ export function UserManagementPanel(): React.JSX.Element | null {
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section className="settings-section rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h3 className="text-base font-semibold text-slate-800">Staff accounts</h3>
       <p className="mt-2 text-sm text-slate-600">
         Register cashiers and other staff. Each user signs in with their own username; transactions,

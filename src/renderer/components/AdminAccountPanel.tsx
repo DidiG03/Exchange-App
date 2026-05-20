@@ -67,7 +67,7 @@ export function AdminAccountPanel(): React.JSX.Element | null {
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
+    <section className="settings-section rounded-xl border border-slate-200 bg-white p-6 shadow-sm">
       <h3 className="text-base font-semibold text-slate-800">Administrator account</h3>
       <p className="mt-2 text-sm text-slate-600">
         Change the sign-in username and/or password for the admin account (

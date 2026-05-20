@@ -347,10 +347,13 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('printer:list', (_event, token: unknown) => {
-    const result = withSession(token, () => listSystemPrinters())
-    if (result && typeof result === 'object' && 'code' in result) return result
-    return result
+  ipcMain.handle('printer:list', async (_event, token: unknown) => {
+    try {
+      requireSession(token)
+      return await listSystemPrinters()
+    } catch (error) {
+      return toIpcError(error)
+    }
   })
 
   ipcMain.handle('printer:printReceipt', async (_event, token: unknown, tx: Transaction) => {

@@ -1,4 +1,5 @@
-import { execSync } from 'child_process'
+import { exec } from 'child_process'
+import { promisify } from 'util'
 import type { Transaction } from '../database/types'
 import type { PrintResult, PrinterSettings } from '../shared/printer-types'
 import { printEscPosReceipt } from './printer-escpos'
@@ -6,14 +7,16 @@ import { getPrinterSettings, savePrinterSettings } from './settings'
 
 export { getPrinterSettings, savePrinterSettings }
 
-export function listSystemPrinters(): string[] {
+const execAsync = promisify(exec)
+
+export async function listSystemPrinters(): Promise<string[]> {
   if (process.platform === 'win32') {
     try {
-      const output = execSync(
+      const { stdout } = await execAsync(
         'powershell -NoProfile -Command "Get-Printer | Select-Object -ExpandProperty Name"',
-        { encoding: 'utf8', timeout: 8000 }
+        { encoding: 'utf8', timeout: 8000, windowsHide: true }
       )
-      return output
+      return stdout
         .split(/\r?\n/)
         .map((name) => name.trim())
         .filter(Boolean)
@@ -24,8 +27,8 @@ export function listSystemPrinters(): string[] {
 
   if (process.platform === 'darwin') {
     try {
-      const output = execSync('lpstat -p', { encoding: 'utf8', timeout: 8000 })
-      return output
+      const { stdout } = await execAsync('lpstat -p', { encoding: 'utf8', timeout: 8000 })
+      return stdout
         .split(/\r?\n/)
         .filter((line) => line.startsWith('printer '))
         .map((line) => line.replace(/^printer\s+(\S+).*/, '$1'))

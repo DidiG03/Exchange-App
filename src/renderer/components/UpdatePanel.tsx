@@ -25,7 +25,7 @@ export function UpdatePanel(): React.JSX.Element {
   const canInstall = state?.status === 'downloaded'
 
   return (
-    <section className="mx-auto max-w-xl">
+    <section className="settings-section mx-auto max-w-xl">
       <h3 className="mb-2 text-base font-semibold text-slate-800">App updates</h3>
       <p className="mb-4 text-sm text-slate-600">
         The installed app checks GitHub for new versions automatically. When an update is ready,
@@ -65,7 +65,7 @@ export function UpdatePanel(): React.JSX.Element {
         {state?.status === 'downloading' && state.percent !== undefined && (
           <div className="h-2 overflow-hidden rounded-full bg-slate-200">
             <div
-              className="h-full rounded-full bg-navy-900 transition-all"
+              className="h-full rounded-full bg-navy-900 transition-[width] duration-150"
               style={{ width: `${state.percent}%` }}
             />
           </div>

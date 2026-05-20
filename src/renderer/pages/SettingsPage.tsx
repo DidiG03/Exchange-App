@@ -5,7 +5,7 @@ import { UserManagementPanel } from '../components/UserManagementPanel'
 
 export function SettingsPage(): React.JSX.Element {
   return (
-    <div className="space-y-10">
+    <div className="space-y-10 pb-4">
       <AdminAccountPanel />
       <UserManagementPanel />
       <UpdatePanel />

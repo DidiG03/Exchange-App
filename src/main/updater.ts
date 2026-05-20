@@ -10,7 +10,21 @@ let state: UpdateState = {
   currentVersion: app.getVersion()
 }
 
-function broadcastUpdateState(): void {
+let lastProgressBroadcast = 0
+
+function broadcastUpdateState(force = false): void {
+  const now = Date.now()
+  if (
+    !force &&
+    state.status === 'downloading' &&
+    now - lastProgressBroadcast < 400
+  ) {
+    return
+  }
+  if (state.status === 'downloading') {
+    lastProgressBroadcast = now
+  }
+
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
       window.webContents.send('update:state', state)
@@ -18,9 +32,9 @@ function broadcastUpdateState(): void {
   }
 }
 
-function setState(partial: Partial<UpdateState>): void {
+function setState(partial: Partial<UpdateState>, forceBroadcast = false): void {
   state = { ...state, currentVersion: app.getVersion(), ...partial }
-  broadcastUpdateState()
+  broadcastUpdateState(forceBroadcast)
 }
 
 export function getUpdateState(): UpdateState {
@@ -64,11 +78,14 @@ export function initAutoUpdater(): void {
   })
 
   autoUpdater.on('update-downloaded', (info) => {
-    setState({
-      status: 'downloaded',
-      availableVersion: info.version,
-      message: `Update ${info.version} is ready. Restart to install.`
-    })
+    setState(
+      {
+        status: 'downloaded',
+        availableVersion: info.version,
+        message: `Update ${info.version} is ready. Restart to install.`
+      },
+      true
+    )
 
     void promptRestart(info.version)
   })
