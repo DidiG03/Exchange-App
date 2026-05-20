@@ -2,11 +2,14 @@ import { app, BrowserWindow, shell } from 'electron'
 import { join } from 'path'
 import { electronApp, optimizer, is } from '@electron-toolkit/utils'
 import { closeDatabase, initDatabase } from '../database'
+import { getAppIcon } from './icon'
 import { registerIpcHandlers } from './ipc'
 import { clearAllSessions } from './session'
 import { initAutoUpdater } from './updater'
 
 function createWindow(): void {
+  const icon = getAppIcon()
+
   const mainWindow = new BrowserWindow({
     width: 1280,
     height: 800,
@@ -15,6 +18,7 @@ function createWindow(): void {
     show: false,
     autoHideMenuBar: true,
     title: 'Exchange Bureau',
+    ...(icon ? { icon } : {}),
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),
       sandbox: false,
@@ -44,6 +48,12 @@ function createWindow(): void {
 
 app.whenReady().then(() => {
   electronApp.setAppUserModelId('com.exchangebureau.albania')
+
+  const icon = getAppIcon()
+  if (process.platform === 'darwin' && icon) {
+    app.dock?.setIcon(icon)
+  }
+
   initDatabase()
   registerIpcHandlers()
 

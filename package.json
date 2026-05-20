@@ -1,6 +1,6 @@
 {
   "name": "exchange-bureau",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Currency exchange bureau desktop app for Albania",
   "main": "./out/main/index.js",
   "author": "Exchange Bureau",
@@ -52,8 +52,10 @@
     "appId": "com.exchangebureau.albania",
     "productName": "Exchange Bureau",
     "directories": {
-      "output": "release"
+      "output": "release",
+      "buildResources": "resources"
     },
+    "icon": "icon.png",
     "files": [
       "out/**/*"
     ],

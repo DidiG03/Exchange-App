@@ -26,6 +26,17 @@ npm install
 npm run dev
 ```
 
+## App icon
+
+Replace `resources/icon.png` with your own square image (1024×1024 PNG recommended). Then rebuild:
+
+```bash
+npm run build
+npm run dist
+```
+
+The same icon is used for the window/taskbar in dev (`npm run dev`) and for the Windows installer shortcut.
+
 ## Build Windows installer
 
 Run on Windows (recommended for native `better-sqlite3`), or use a Windows CI runner:
