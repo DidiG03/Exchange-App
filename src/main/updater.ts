@@ -108,7 +108,13 @@ export async function checkForUpdates(): Promise<UpdateState> {
 
 export async function quitAndInstall(): Promise<void> {
   if (!app.isPackaged) return
-  autoUpdater.quitAndInstall(false, true)
+
+  for (const window of BrowserWindow.getAllWindows()) {
+    window.destroy()
+  }
+
+  // Silent install on Windows — avoids the full NSIS wizard while the app is still open
+  autoUpdater.quitAndInstall(true, true)
 }
 
 async function promptRestart(version: string): Promise<void> {
