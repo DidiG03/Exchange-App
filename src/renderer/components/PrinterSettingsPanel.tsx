@@ -19,6 +19,7 @@ export function PrinterSettingsPanel(): React.JSX.Element {
   const [loadingPrinters, setLoadingPrinters] = useState(false)
   const [loadingNetworkPrinters, setLoadingNetworkPrinters] = useState(false)
   const [testingNetwork, setTestingNetwork] = useState(false)
+  const [testingLocal, setTestingLocal] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -78,6 +79,25 @@ export function PrinterSettingsPanel(): React.JSX.Element {
       }
     }
     setLoadingNetworkPrinters(false)
+  }
+
+  async function testLocalPrint(): Promise<void> {
+    setTestingLocal(true)
+    setError(null)
+    setMessage(null)
+
+    const result = await window.api.testLocalPrinter(settings.printerName.trim())
+
+    setTestingLocal(false)
+
+    if (!result || typeof result !== 'object' || !('success' in result)) return
+
+    if (result.success) {
+      setMessage('Test page sent to the printer. If nothing printed, check the name matches Windows exactly (e.g. XP-80C).')
+      return
+    }
+
+    setError(result.error ?? 'Test print failed.')
   }
 
   async function testNetworkConnection(): Promise<void> {
@@ -266,10 +286,20 @@ export function PrinterSettingsPanel(): React.JSX.Element {
             )}
             {printers.length === 0 && !loadingPrinters && (
               <p className="mt-1 text-xs text-slate-500">
-                Type the printer name as shown in Windows, or use Load printer list (can take a few
-                seconds).
+                For USB printers like XP-80C: click Load printer list, select the exact Windows name,
+                then Test print.
               </p>
             )}
+            <div className="mt-3 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void testLocalPrint()}
+                disabled={testingLocal || !settings.printerName.trim()}
+                className="rounded-lg border border-navy-800 px-4 py-2 text-sm font-medium text-navy-900 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {testingLocal ? 'Printing test…' : 'Test print'}
+              </button>
+            </div>
           </div>
         ) : (
           <div className="space-y-4">

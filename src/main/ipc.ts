@@ -37,6 +37,7 @@ import {
   listSystemPrinters,
   printTransactionReceipt,
   savePrinterSettings,
+  testLocalPrinter,
   testNetworkPrinter
 } from './printer'
 import {
@@ -101,6 +102,7 @@ const IPC_CHANNELS = [
   'printer:list',
   'printer:listNetwork',
   'printer:testNetwork',
+  'printer:testLocal',
   'printer:printReceipt',
   'update:getState',
   'update:check',
@@ -404,6 +406,21 @@ export function registerIpcHandlers(): void {
         }
         const printerPort = typeof port === 'number' ? port : Number(port)
         return await testNetworkPrinter(host, printerPort || 9100)
+      } catch (error) {
+        return toIpcError(error)
+      }
+    }
+  )
+
+  ipcMain.handle(
+    'printer:testLocal',
+    async (_event, token: unknown, printerName: unknown) => {
+      try {
+        requireSession(token)
+        if (typeof printerName !== 'string') {
+          return { success: false, error: 'Printer name is required.' }
+        }
+        return await testLocalPrinter(printerName)
       } catch (error) {
         return toIpcError(error)
       }

@@ -5,6 +5,7 @@ import type { NetworkPrinterDevice, NetworkPrinterTestResult, PrintResult, Print
 import type { ReceiptLanguage } from '../shared/receipt-language'
 import { isReceiptLanguage } from '../shared/receipt-language'
 import { printEscPosReceipt, printEscPosReceiptToNetwork } from './printer-escpos'
+import { printWindowsTestReceipt } from './printer-windows-raw'
 import { scanNetworkPrinters, testNetworkPrinterConnection } from './printer-network'
 import { getPrinterSettings, savePrinterSettings } from './settings'
 
@@ -107,6 +108,30 @@ export async function printTransactionReceipt(
     return {
       success: false,
       error: error instanceof Error ? error.message : 'Failed to print receipt'
+    }
+  }
+}
+
+export async function testLocalPrinter(printerName: string): Promise<PrintResult> {
+  const trimmedName = printerName.trim()
+  if (!trimmedName) {
+    return { success: false, error: 'Select or enter the printer name from Windows first.' }
+  }
+
+  if (process.platform !== 'win32') {
+    return {
+      success: false,
+      error: 'Local printer test is only needed on Windows. Save settings and run a transaction to test printing.'
+    }
+  }
+
+  try {
+    await printWindowsTestReceipt(trimmedName)
+    return { success: true }
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Test print failed.'
     }
   }
 }

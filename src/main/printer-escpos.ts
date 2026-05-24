@@ -14,6 +14,7 @@ import {
 import { getPrinterSettings } from './settings'
 import { loadPrinterDriver } from './printer-driver'
 import { sendRawToNetworkPrinter } from './printer-network'
+import { sendRawToWindowsPrinter } from './printer-windows-raw'
 
 const LINE_WIDTH = 48
 const BOX_WIDTH = 40
@@ -163,14 +164,26 @@ export async function printEscPosReceipt(
   }
 
   if (process.platform === 'win32') {
-    const driver = loadPrinterDriver()
-    if (!driver) {
-      throw new Error(
-        'RAW printer driver missing on Windows. Run: npm install @thesusheer/electron-printer && npm run postinstall'
-      )
+    try {
+      await sendRawToWindowsPrinter(printerName, buffer)
+      return
+    } catch (windowsError) {
+      const driver = loadPrinterDriver()
+      if (!driver) {
+        throw windowsError instanceof Error
+          ? windowsError
+          : new Error('Failed to print receipt on Windows.')
+      }
+
+      try {
+        await sendRawOnWindows(printerName, buffer, driver)
+        return
+      } catch {
+        throw windowsError instanceof Error
+          ? windowsError
+          : new Error('Failed to print receipt on Windows.')
+      }
     }
-    await sendRawOnWindows(printerName, buffer, driver)
-    return
   }
 
   throw new Error('Unsupported platform for thermal printing')

@@ -95,6 +95,9 @@ export interface ExchangeApi {
     host: string,
     port: number
   ) => Promise<NetworkPrinterTestResult | SessionExpiredResponse>
+  testLocalPrinter: (
+    printerName: string
+  ) => Promise<PrintResult | SessionExpiredResponse>
   printReceipt: (
     transaction: Transaction,
     language?: ReceiptLanguage
@@ -243,6 +246,8 @@ const api: ExchangeApi = {
     invokeWithSession<NetworkPrinterDevice[]>('printer:listNetwork', knownHost),
   testNetworkPrinter: (host, port) =>
     invokeWithSession<NetworkPrinterTestResult>('printer:testNetwork', host, port),
+  testLocalPrinter: (printerName) =>
+    invokeWithSession<PrintResult>('printer:testLocal', printerName),
   printReceipt: (transaction, language = 'sq') =>
     invokeWithSession<PrintResult>('printer:printReceipt', transaction, language),
   getUpdateState: () => ipcRenderer.invoke('update:getState'),
