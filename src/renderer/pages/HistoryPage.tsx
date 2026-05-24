@@ -6,7 +6,6 @@ import {
   formatCrossRate,
   formatDateTime,
   formatForeign,
-  formatRate
 } from '../utils/format'
 
 const FILTERS: { value: DateFilter; label: string }[] = [
@@ -16,6 +15,8 @@ const FILTERS: { value: DateFilter; label: string }[] = [
 ]
 
 function formatTransactionPair(tx: Transaction): string {
+  if (tx.type === 'buy') return `${tx.currency} → ALL`
+  if (tx.type === 'sell') return `ALL → ${tx.currency}`
   if (tx.type === 'cross' && tx.to_currency) {
     return `${tx.currency} → ${tx.to_currency}`
   }
@@ -39,12 +40,14 @@ function formatAppliedRate(tx: Transaction): string {
   if (tx.type === 'cross' && tx.to_currency) {
     return formatCrossRate(tx.currency, tx.to_currency, tx.rate_applied)
   }
-  return formatRate(tx.rate_applied)
+  if (tx.type === 'buy') {
+    return formatCrossRate(tx.currency, 'ALL', tx.rate_applied)
+  }
+  return formatCrossRate('ALL', tx.currency, tx.rate_applied)
 }
 
 function formatTransactionType(type: Transaction['type']): string {
-  if (type === 'cross') return 'Convert'
-  return type.charAt(0).toUpperCase() + type.slice(1)
+  return 'Exchange'
 }
 
 function isVoided(tx: Transaction): boolean {

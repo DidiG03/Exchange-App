@@ -1,6 +1,6 @@
 {
   "name": "exchange-bureau",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "description": "Currency exchange bureau desktop app for Albania",
   "main": "./out/main/index.js",
   "author": "Exchange Bureau",

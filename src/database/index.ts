@@ -5,21 +5,25 @@ import bcrypt from 'bcryptjs'
 import { SCHEMA_SQL } from './schema'
 import {
   migrateRateChangeLogTable,
+  migrateExchangePairRatesTable,
   migrateTransactionCreatorColumns,
   migrateTransactionVoidColumns,
   migrateTransactionsTable,
   migrateUserRoles
 } from './migrate'
-import { DEFAULT_RATE_SEEDS, isSupportedCurrency } from '../shared/currencies'
+import { BASE_CURRENCY, DEFAULT_RATE_SEEDS, isCurrencyCode, isSupportedCurrency } from '../shared/currencies'
 import type {
   CreateTransactionInput,
   DateFilter,
+  ExchangePairRate,
   ExchangeRate,
   GetRateHistoryOptions,
+  LiveRatesSnapshot,
   LoginResult,
   RateChangeLogEntry,
   RegisterUserInput,
   UpdateAdminCredentialsInput,
+  SaveExchangeRateInput,
   SaveRateInput,
   SupportedCurrency,
   Transaction,
@@ -27,6 +31,7 @@ import type {
   UserListEntry,
   UserRole
 } from './types'
+import type { CurrencyCode } from '../shared/currencies'
 
 const DEFAULT_ADMIN = { username: 'admin', password: 'admin123' }
 const DEFAULT_RATES: SaveRateInput[] = DEFAULT_RATE_SEEDS
@@ -54,6 +59,7 @@ export function initDatabase(): void {
   migrateTransactionsTable(db)
   migrateTransactionVoidColumns(db)
   migrateRateChangeLogTable(db)
+  migrateExchangePairRatesTable(db)
   migrateUserRoles(db)
   migrateTransactionCreatorColumns(db)
   seedAdminUser()
@@ -305,6 +311,77 @@ export function getAllRates(): ExchangeRate[] {
   return rows
 }
 
+export function getAllPairRates(): ExchangePairRate[] {
+  const database = getDb()
+  return database
+    .prepare(
+      `SELECT from_currency, to_currency, buy_rate, sell_rate, updated_at
+       FROM exchange_pair_rates
+       ORDER BY from_currency ASC, to_currency ASC`
+    )
+    .all() as ExchangePairRate[]
+}
+
+export function getLiveRatesSnapshot(): LiveRatesSnapshot {
+  return {
+    all: getAllRates(),
+    pairs: getAllPairRates()
+  }
+}
+
+export function getPairRate(
+  fromCurrency: SupportedCurrency,
+  toCurrency: SupportedCurrency
+): ExchangePairRate | null {
+  const database = getDb()
+  const row = database
+    .prepare(
+      `SELECT from_currency, to_currency, buy_rate, sell_rate, updated_at
+       FROM exchange_pair_rates
+       WHERE from_currency = ? AND to_currency = ?`
+    )
+    .get(fromCurrency, toCurrency) as ExchangePairRate | undefined
+
+  return row ?? null
+}
+
+function logRateChange(
+  database: Database.Database,
+  entry: {
+    currency: SupportedCurrency
+    from_currency: CurrencyCode
+    to_currency: CurrencyCode
+    previous_buy_rate: number | null
+    previous_sell_rate: number | null
+    new_buy_rate: number
+    new_sell_rate: number
+    changed_by_user_id: number
+    changed_by_username: string
+    changed_at: string
+  }
+): void {
+  database
+    .prepare(
+      `INSERT INTO rate_change_log (
+         currency, from_currency, to_currency,
+         previous_buy_rate, previous_sell_rate,
+         new_buy_rate, new_sell_rate, changed_by_user_id, changed_by_username, changed_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      entry.currency,
+      entry.from_currency,
+      entry.to_currency,
+      entry.previous_buy_rate,
+      entry.previous_sell_rate,
+      entry.new_buy_rate,
+      entry.new_sell_rate,
+      entry.changed_by_user_id,
+      entry.changed_by_username,
+      entry.changed_at
+    )
+}
+
 export function saveRate(
   input: SaveRateInput,
   operator: { userId: number; username: string }
@@ -331,29 +408,132 @@ export function saveRate(
     )
     .run(input.currency, input.buy_rate, input.sell_rate, now)
 
-  database
-    .prepare(
-      `INSERT INTO rate_change_log (
-         currency, previous_buy_rate, previous_sell_rate,
-         new_buy_rate, new_sell_rate, changed_by_user_id, changed_by_username, changed_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      input.currency,
-      previous?.buy_rate ?? null,
-      previous?.sell_rate ?? null,
-      input.buy_rate,
-      input.sell_rate,
-      operator.userId,
-      operator.username,
-      now
-    )
+  logRateChange(database, {
+    currency: input.currency,
+    from_currency: input.currency,
+    to_currency: BASE_CURRENCY,
+    previous_buy_rate: previous?.buy_rate ?? null,
+    previous_sell_rate: previous?.sell_rate ?? null,
+    new_buy_rate: input.buy_rate,
+    new_sell_rate: input.sell_rate,
+    changed_by_user_id: operator.userId,
+    changed_by_username: operator.username,
+    changed_at: now
+  })
 
   return database
     .prepare(
       'SELECT currency, buy_rate, sell_rate, updated_at FROM exchange_rates WHERE currency = ?'
     )
     .get(input.currency) as ExchangeRate
+}
+
+export function savePairRate(
+  input: Omit<ExchangePairRate, 'updated_at'>,
+  operator: { userId: number; username: string }
+): ExchangePairRate {
+  if (!isSupportedCurrency(input.from_currency) || !isSupportedCurrency(input.to_currency)) {
+    throw new Error('Unsupported currency pair')
+  }
+  if (input.from_currency === input.to_currency) {
+    throw new Error('From and to currencies must be different')
+  }
+  if (input.buy_rate <= 0 || input.sell_rate <= 0) {
+    throw new Error('Rates must be greater than zero')
+  }
+
+  const database = getDb()
+  const now = new Date().toISOString()
+  const previous = getPairRate(input.from_currency, input.to_currency)
+
+  database
+    .prepare(
+      `INSERT INTO exchange_pair_rates (from_currency, to_currency, buy_rate, sell_rate, updated_at)
+       VALUES (?, ?, ?, ?, ?)
+       ON CONFLICT(from_currency, to_currency) DO UPDATE SET
+         buy_rate = excluded.buy_rate,
+         sell_rate = excluded.sell_rate,
+         updated_at = excluded.updated_at`
+    )
+    .run(
+      input.from_currency,
+      input.to_currency,
+      input.buy_rate,
+      input.sell_rate,
+      now
+    )
+
+  logRateChange(database, {
+    currency: input.from_currency,
+    from_currency: input.from_currency,
+    to_currency: input.to_currency,
+    previous_buy_rate: previous?.buy_rate ?? null,
+    previous_sell_rate: previous?.sell_rate ?? null,
+    new_buy_rate: input.buy_rate,
+    new_sell_rate: input.sell_rate,
+    changed_by_user_id: operator.userId,
+    changed_by_username: operator.username,
+    changed_at: now
+  })
+
+  return database
+    .prepare(
+      `SELECT from_currency, to_currency, buy_rate, sell_rate, updated_at
+       FROM exchange_pair_rates
+       WHERE from_currency = ? AND to_currency = ?`
+    )
+    .get(input.from_currency, input.to_currency) as ExchangePairRate
+}
+
+export function saveExchangeRate(
+  input: SaveExchangeRateInput,
+  operator: { userId: number; username: string }
+): ExchangeRate | ExchangePairRate {
+  if (!isCurrencyCode(input.from_currency) || !isCurrencyCode(input.to_currency)) {
+    throw new Error('Unsupported currency')
+  }
+  if (input.from_currency === input.to_currency) {
+    throw new Error('From and to currencies must be different')
+  }
+  if (input.buy_rate <= 0 || input.sell_rate <= 0) {
+    throw new Error('Rates must be greater than zero')
+  }
+
+  const involvesAll =
+    input.from_currency === BASE_CURRENCY || input.to_currency === BASE_CURRENCY
+
+  if (involvesAll) {
+    const foreignCurrency =
+      input.from_currency === BASE_CURRENCY ? input.to_currency : input.from_currency
+    if (!isSupportedCurrency(foreignCurrency)) {
+      throw new Error('Unsupported currency')
+    }
+    return saveRate(
+      {
+        currency: foreignCurrency,
+        buy_rate: input.buy_rate,
+        sell_rate: input.sell_rate
+      },
+      operator
+    )
+  }
+
+  if (
+    !isSupportedCurrency(input.from_currency) ||
+    !isSupportedCurrency(input.to_currency)
+  ) {
+    throw new Error('Unsupported currency pair')
+  }
+
+  return savePairRate(
+    {
+      from_currency: input.from_currency,
+      to_currency: input.to_currency,
+      buy_rate: input.buy_rate,
+      sell_rate: input.sell_rate
+    },
+    operator
+  )
 }
 
 export function getRateChangeHistory(
@@ -372,11 +552,21 @@ export function getRateChangeHistory(
     params.push(options.currency)
   }
 
+  if (options.from_currency) {
+    clauses.push('from_currency = ?')
+    params.push(options.from_currency)
+  }
+
+  if (options.to_currency) {
+    clauses.push('to_currency = ?')
+    params.push(options.to_currency)
+  }
+
   params.push(limit)
 
   return database
     .prepare(
-      `SELECT id, currency, previous_buy_rate, previous_sell_rate,
+      `SELECT id, currency, from_currency, to_currency, previous_buy_rate, previous_sell_rate,
               new_buy_rate, new_sell_rate, changed_by_user_id, changed_by_username, changed_at
        FROM rate_change_log
        WHERE ${clauses.join(' AND ')}

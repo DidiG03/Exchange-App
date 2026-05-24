@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { DateFilter, GetRateHistoryOptions, RateChangeLogEntry, SupportedCurrency } from '../../database/types'
 import { CURRENCY_CODES } from '../../shared/currencies'
-import { formatDateTime, formatRate } from '../utils/format'
+import { formatDateTime, formatPairLabel, formatPairRate } from '../utils/format'
 
 const PERIOD_FILTERS: { value: DateFilter; label: string }[] = [
   { value: 'today', label: 'Today' },
@@ -9,14 +9,24 @@ const PERIOD_FILTERS: { value: DateFilter; label: string }[] = [
   { value: 'all', label: 'All time' }
 ]
 
-function formatPrevious(value: number | null): string {
-  return value === null ? '—' : formatRate(value)
+function formatPair(entry: RateChangeLogEntry): string {
+  if (entry.from_currency && entry.to_currency) {
+    return formatPairLabel(entry.from_currency, entry.to_currency)
+  }
+  return entry.currency
 }
 
-function formatDelta(previous: number | null, next: number): string {
-  if (previous === null) return formatRate(next)
-  if (Math.abs(previous - next) < 1e-9) return formatRate(next)
-  return `${formatRate(previous)} → ${formatRate(next)}`
+function formatPrevious(entry: RateChangeLogEntry, value: number | null): string {
+  if (value === null) return '—'
+  const from = entry.from_currency ?? entry.currency
+  const to = entry.to_currency ?? 'ALL'
+  return formatPairRate(from, to, value)
+}
+
+function formatDelta(entry: RateChangeLogEntry, previous: number | null, next: number): string {
+  if (previous === null) return formatPrevious(entry, next)
+  if (Math.abs(previous - next) < 1e-9) return formatPrevious(entry, next)
+  return `${formatPrevious(entry, previous)} → ${formatPrevious(entry, next)}`
 }
 
 interface RateChangeHistoryProps {
@@ -102,7 +112,7 @@ export function RateChangeHistory({ refreshKey = 0 }: RateChangeHistoryProps): R
                   When
                 </th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600">Operator</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Currency</th>
+                <th className="px-4 py-3 text-left font-medium text-slate-600">Pair</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600">Buy rate</th>
                 <th className="px-4 py-3 text-left font-medium text-slate-600">Sell rate</th>
               </tr>
@@ -114,15 +124,15 @@ export function RateChangeHistory({ refreshKey = 0 }: RateChangeHistoryProps): R
                     {formatDateTime(entry.changed_at)}
                   </td>
                   <td className="px-4 py-3 font-medium">{entry.changed_by_username}</td>
-                  <td className="px-4 py-3 font-medium">{entry.currency}</td>
+                  <td className="px-4 py-3 font-medium">{formatPair(entry)}</td>
                   <td className="px-4 py-3">
-                    <span title={`Was ${formatPrevious(entry.previous_buy_rate)}`}>
-                      {formatDelta(entry.previous_buy_rate, entry.new_buy_rate)}
+                    <span title={`Was ${formatPrevious(entry, entry.previous_buy_rate)}`}>
+                      {formatDelta(entry, entry.previous_buy_rate, entry.new_buy_rate)}
                     </span>
                   </td>
                   <td className="px-4 py-3">
-                    <span title={`Was ${formatPrevious(entry.previous_sell_rate)}`}>
-                      {formatDelta(entry.previous_sell_rate, entry.new_sell_rate)}
+                    <span title={`Was ${formatPrevious(entry, entry.previous_sell_rate)}`}>
+                      {formatDelta(entry, entry.previous_sell_rate, entry.new_sell_rate)}
                     </span>
                   </td>
                 </tr>

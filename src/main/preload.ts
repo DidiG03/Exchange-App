@@ -3,11 +3,14 @@ import type {
   CreateTransactionInput,
   DateFilter,
   ExchangeRate,
+  ExchangePairRate,
   GetRateHistoryOptions,
+  LiveRatesSnapshot,
   LoginResult,
   RateChangeLogEntry,
   RegisterUserInput,
   UpdateAdminCredentialsInput,
+  SaveExchangeRateInput,
   SaveRateInput,
   User,
   SessionStatus,
@@ -15,8 +18,8 @@ import type {
   Transaction,
   UserListEntry
 } from '../database/types'
-import type { PrintResult, NetworkPrinterDevice, PrinterSettings } from '../shared/printer-types'
-import type { UpdateState } from '../shared/updater-types'
+import type { PrintResult, NetworkPrinterDevice, NetworkPrinterTestResult, PrinterSettings } from '../shared/printer-types'
+import type { ReceiptLanguage } from '../shared/receipt-language'
 import { SESSION_EXPIRED_CODE } from '../shared/auth-constants'
 
 export interface ExchangeApi {
@@ -44,13 +47,19 @@ export interface ExchangeApi {
     userId: number
   ) => Promise<{ success: true } | { success: false; error: string; code?: string }>
   onSessionExpired: (callback: () => void) => () => void
-  getLiveRates: () => Promise<ExchangeRate[] | SessionExpiredResponse>
-  onRatesUpdated: (callback: (rates: ExchangeRate[]) => void) => () => void
+  getLiveRates: () => Promise<LiveRatesSnapshot | SessionExpiredResponse>
+  onRatesUpdated: (callback: (snapshot: LiveRatesSnapshot) => void) => () => void
   getAllRates: () => Promise<ExchangeRate[] | SessionExpiredResponse>
   saveRate: (
     input: SaveRateInput
   ) => Promise<
     | { success: true; data: ExchangeRate }
+    | { success: false; error: string; code?: string }
+  >
+  saveExchangeRate: (
+    input: SaveExchangeRateInput
+  ) => Promise<
+    | { success: true; data: ExchangeRate | ExchangePairRate }
     | { success: false; error: string; code?: string }
   >
   getRate: (currency: SupportedCurrency) => Promise<ExchangeRate | null | SessionExpiredResponse>
@@ -79,8 +88,17 @@ export interface ExchangeApi {
     | { success: false; error: string; code?: string }
   >
   listPrinters: () => Promise<string[] | SessionExpiredResponse>
-  listNetworkPrinters: () => Promise<NetworkPrinterDevice[] | SessionExpiredResponse>
-  printReceipt: (transaction: Transaction) => Promise<PrintResult | SessionExpiredResponse>
+  listNetworkPrinters: (
+    knownHost?: string
+  ) => Promise<NetworkPrinterDevice[] | SessionExpiredResponse>
+  testNetworkPrinter: (
+    host: string,
+    port: number
+  ) => Promise<NetworkPrinterTestResult | SessionExpiredResponse>
+  printReceipt: (
+    transaction: Transaction,
+    language?: ReceiptLanguage
+  ) => Promise<PrintResult | SessionExpiredResponse>
   getUpdateState: () => Promise<UpdateState>
   checkForUpdates: () => Promise<UpdateState>
   installUpdate: () => Promise<{ success: boolean }>
@@ -199,10 +217,10 @@ const api: ExchangeApi = {
     return () => sessionExpiredListeners.delete(callback)
   },
 
-  getLiveRates: () => invokeWithSession<ExchangeRate[]>('rates:getLive'),
+  getLiveRates: () => invokeWithSession<LiveRatesSnapshot>('rates:getLive'),
   onRatesUpdated: (callback) => {
-    const listener = (_event: Electron.IpcRendererEvent, rates: ExchangeRate[]): void => {
-      callback(rates)
+    const listener = (_event: Electron.IpcRendererEvent, snapshot: LiveRatesSnapshot): void => {
+      callback(snapshot)
     }
     ipcRenderer.on('rates:updated', listener)
     return () => {
@@ -211,6 +229,7 @@ const api: ExchangeApi = {
   },
   getAllRates: () => invokeWithSession<ExchangeRate[]>('rates:getAll'),
   saveRate: (input) => invokeWithSession('rates:save', input),
+  saveExchangeRate: (input) => invokeWithSession('rates:saveExchange', input),
   getRate: (currency) => invokeWithSession('rates:get', currency),
   getRateChangeHistory: (options) => invokeWithSession('rates:getHistory', options ?? {}),
   createTransaction: (input) => invokeWithSession('transactions:create', input),
@@ -220,8 +239,12 @@ const api: ExchangeApi = {
   getPrinterSettings: () => invokeWithSession<PrinterSettings>('printer:getSettings'),
   savePrinterSettings: (settings) => invokeWithSession('printer:saveSettings', settings),
   listPrinters: () => invokeWithSession<string[]>('printer:list'),
-  listNetworkPrinters: () => invokeWithSession<NetworkPrinterDevice[]>('printer:listNetwork'),
-  printReceipt: (transaction) => invokeWithSession<PrintResult>('printer:printReceipt', transaction),
+  listNetworkPrinters: (knownHost) =>
+    invokeWithSession<NetworkPrinterDevice[]>('printer:listNetwork', knownHost),
+  testNetworkPrinter: (host, port) =>
+    invokeWithSession<NetworkPrinterTestResult>('printer:testNetwork', host, port),
+  printReceipt: (transaction, language = 'sq') =>
+    invokeWithSession<PrintResult>('printer:printReceipt', transaction, language),
   getUpdateState: () => ipcRenderer.invoke('update:getState'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),

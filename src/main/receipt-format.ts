@@ -1,5 +1,6 @@
 import type { Transaction } from '../database/types'
 import type { ReceiptDocument } from '../shared/printer-types'
+import type { ReceiptLanguage } from '../shared/receipt-language'
 
 const LINE_WIDTH = 48
 const COL_SHUMA = 14
@@ -10,6 +11,37 @@ export interface BureauReceiptConfig {
   bureauName: string
   city: string
 }
+
+const RECEIPT_COPY = {
+  sq: {
+    mandatTitle: 'Mandat Konvertim Valute',
+    invoicePrefix: 'Nr. Fatures',
+    datePrefix: 'Data',
+    clientLine: 'Klienti  .',
+    columnAmount: 'Shuma',
+    columnRate: 'Kursi',
+    columnConverted: 'Shuma e Konvert.',
+    voidBanner: '*** ANULLUAR ***',
+    voidReason: 'Arsye',
+    voidOperator: 'Operator',
+    voidAt: 'Me',
+    footerJoiner: 'me'
+  },
+  en: {
+    mandatTitle: 'Currency Exchange Receipt',
+    invoicePrefix: 'Invoice No.',
+    datePrefix: 'Date',
+    clientLine: 'Customer',
+    columnAmount: 'Amount',
+    columnRate: 'Rate',
+    columnConverted: 'Converted',
+    voidBanner: '*** VOIDED ***',
+    voidReason: 'Reason',
+    voidOperator: 'Operator',
+    voidAt: 'At',
+    footerJoiner: 'on'
+  }
+} as const
 
 function padRight(text: string, width: number): string {
   if (text.length >= width) return text.slice(0, width)
@@ -96,30 +128,35 @@ function buildAmounts(tx: Transaction): {
 
 export function buildReceiptDocument(
   tx: Transaction,
-  config: BureauReceiptConfig
+  config: BureauReceiptConfig,
+  language: ReceiptLanguage = 'sq'
 ): ReceiptDocument {
+  const copy = RECEIPT_COPY[language]
   const { date, dateTime } = formatDateParts(tx.created_at)
   const amounts = buildAmounts(tx)
 
   const doc: ReceiptDocument = {
     bureauName: config.bureauName.toUpperCase(),
-    mandatTitle: 'Mandat Konvertim Valute',
-    invoiceLine: padLine(`Nr. Fatures ${tx.id}`, `Data ${date}`),
-    clientLine: 'Klienti  .',
+    mandatTitle: copy.mandatTitle,
+    invoiceLine: padLine(`${copy.invoicePrefix} ${tx.id}`, `${copy.datePrefix} ${date}`),
+    clientLine: copy.clientLine,
+    columnAmount: copy.columnAmount,
+    columnRate: copy.columnRate,
+    columnConverted: copy.columnConverted,
     shuma: amounts.shuma,
     kursi: amounts.kursi,
     shumaKonvertuar: amounts.shumaKonvertuar,
     totalBox: amounts.totalBox,
-    footer: `${config.city}, me ${dateTime}`
+    footer: `${config.city}, ${copy.footerJoiner} ${dateTime}`
   }
 
   if (tx.voided_at) {
     const voidWhen = formatDateParts(tx.voided_at).dateTime
-    doc.voidBanner = '*** ANULLUAR ***'
+    doc.voidBanner = copy.voidBanner
     doc.voidDetail = [
-      `Arsye: ${tx.void_reason ?? ''}`,
-      `Operator: ${tx.voided_by_username ?? ''}`,
-      `Me: ${voidWhen}`
+      `${copy.voidReason}: ${tx.void_reason ?? ''}`,
+      `${copy.voidOperator}: ${tx.voided_by_username ?? ''}`,
+      `${copy.voidAt}: ${voidWhen}`
     ].join('\n')
   }
 
@@ -127,8 +164,12 @@ export function buildReceiptDocument(
 }
 
 /** Legacy line list for debugging */
-export function formatReceiptLines(tx: Transaction, config: BureauReceiptConfig): string[] {
-  const doc = buildReceiptDocument(tx, config)
+export function formatReceiptLines(
+  tx: Transaction,
+  config: BureauReceiptConfig,
+  language: ReceiptLanguage = 'sq'
+): string[] {
+  const doc = buildReceiptDocument(tx, config, language)
   return [
     doc.bureauName,
     '.'.repeat(LINE_WIDTH),
@@ -136,7 +177,7 @@ export function formatReceiptLines(tx: Transaction, config: BureauReceiptConfig)
     doc.invoiceLine,
     doc.clientLine,
     '',
-    formatColumns('Shuma', 'Kursi', 'Shuma e Konvert.'),
+    formatColumns(doc.columnAmount, doc.columnRate, doc.columnConverted),
     formatColumns(doc.shuma, doc.kursi, doc.shumaKonvertuar),
     doc.totalBox,
     doc.footer,

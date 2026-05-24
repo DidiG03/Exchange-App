@@ -1,6 +1,6 @@
-import type { SupportedCurrency } from '../shared/currencies'
+import type { CurrencyCode, SupportedCurrency } from '../shared/currencies'
 
-export type { SupportedCurrency }
+export type { SupportedCurrency, CurrencyCode }
 
 export type TransactionType = 'buy' | 'sell' | 'cross'
 
@@ -39,6 +39,19 @@ export interface ExchangeRate {
   updated_at: string
 }
 
+export interface ExchangePairRate {
+  from_currency: SupportedCurrency
+  to_currency: SupportedCurrency
+  buy_rate: number
+  sell_rate: number
+  updated_at: string
+}
+
+export interface LiveRatesSnapshot {
+  all: ExchangeRate[]
+  pairs: ExchangePairRate[]
+}
+
 export interface Transaction {
   id: number
   type: TransactionType
@@ -64,6 +77,8 @@ export interface VoidTransactionInput {
 export interface RateChangeLogEntry {
   id: number
   currency: SupportedCurrency
+  from_currency: CurrencyCode | null
+  to_currency: CurrencyCode | null
   previous_buy_rate: number | null
   previous_sell_rate: number | null
   new_buy_rate: number
@@ -75,6 +90,8 @@ export interface RateChangeLogEntry {
 
 export interface GetRateHistoryOptions {
   currency?: SupportedCurrency
+  from_currency?: CurrencyCode
+  to_currency?: CurrencyCode
   filter?: DateFilter
   limit?: number
 }
@@ -95,6 +112,13 @@ export interface SessionStatus {
 
 export interface SaveRateInput {
   currency: SupportedCurrency
+  buy_rate: number
+  sell_rate: number
+}
+
+export interface SaveExchangeRateInput {
+  from_currency: CurrencyCode
+  to_currency: CurrencyCode
   buy_rate: number
   sell_rate: number
 }

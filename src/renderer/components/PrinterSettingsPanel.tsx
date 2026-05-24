@@ -18,6 +18,7 @@ export function PrinterSettingsPanel(): React.JSX.Element {
   const [loadingSettings, setLoadingSettings] = useState(true)
   const [loadingPrinters, setLoadingPrinters] = useState(false)
   const [loadingNetworkPrinters, setLoadingNetworkPrinters] = useState(false)
+  const [testingNetwork, setTestingNetwork] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -61,16 +62,51 @@ export function PrinterSettingsPanel(): React.JSX.Element {
   async function loadNetworkPrinters(): Promise<void> {
     setLoadingNetworkPrinters(true)
     setError(null)
-    const available = await window.api.listNetworkPrinters()
+    setMessage(null)
+    const knownHost = settings.printerHost.trim() || undefined
+    const available = await window.api.listNetworkPrinters(knownHost)
     if (Array.isArray(available)) {
       setNetworkPrinters(available)
       if (available.length === 0) {
-        setError(
-          'No LAN printers found on port 9100. Check that the printer is on the same network, powered on, and supports raw TCP printing.'
+        setMessage(
+          knownHost
+            ? `Scan finished — no open raw-print ports found on the network. You can still save ${knownHost} and use Test connection.`
+            : 'Scan finished — no printers found. Enter the printer IP below and use Test connection.'
         )
+      } else if (knownHost && available.some((device) => device.host === knownHost)) {
+        setMessage(`Found your printer at ${knownHost}.`)
       }
     }
     setLoadingNetworkPrinters(false)
+  }
+
+  async function testNetworkConnection(): Promise<void> {
+    setTestingNetwork(true)
+    setError(null)
+    setMessage(null)
+
+    const result = await window.api.testNetworkPrinter(
+      settings.printerHost.trim(),
+      settings.printerPort
+    )
+
+    setTestingNetwork(false)
+
+    if (!result || typeof result !== 'object' || !('success' in result)) return
+
+    if (result.success) {
+      if (result.port && result.port !== settings.printerPort) {
+        setSettings((current) => ({ ...current, printerPort: result.port! }))
+      }
+      setMessage(
+        result.port
+          ? `Printer reachable at ${settings.printerHost.trim()}:${result.port}. Save settings to use it.`
+          : `Printer reachable at ${settings.printerHost.trim()}. Save settings to use it.`
+      )
+      return
+    }
+
+    setError(result.error ?? 'Could not connect to the printer.')
   }
 
   function selectNetworkPrinter(device: NetworkPrinterDevice): void {
@@ -255,8 +291,9 @@ export function PrinterSettingsPanel(): React.JSX.Element {
               </div>
               {loadingNetworkPrinters && (
                 <p className="text-xs text-slate-500">
-                  Scanning your local network for thermal printers on port 9100. This can take up to
-                  10 seconds.
+                  Scanning for raw printing on ports 9100–9102
+                  {settings.printerHost.trim() ? ` (including ${settings.printerHost.trim()})` : ''}.
+                  This can take up to 15 seconds.
                 </p>
               )}
               {networkPrinters.length > 0 && (
@@ -284,8 +321,8 @@ export function PrinterSettingsPanel(): React.JSX.Element {
               )}
               {!loadingNetworkPrinters && networkPrinters.length === 0 && (
                 <p className="text-xs text-slate-500">
-                  Scans devices on your subnet with raw printing port 9100 open (common for ESC/POS
-                  thermal printers).
+                  Scan is optional. If you already know the IP, enter it below and click Test
+                  connection. Many thermal printers use port 9100.
                 </p>
               )}
             </div>
@@ -331,9 +368,19 @@ export function PrinterSettingsPanel(): React.JSX.Element {
                 />
               </div>
             </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => void testNetworkConnection()}
+                disabled={testingNetwork || !settings.printerHost.trim()}
+                className="rounded-lg border border-navy-800 px-4 py-2 text-sm font-medium text-navy-900 hover:bg-slate-50 disabled:opacity-50"
+              >
+                {testingNetwork ? 'Testing…' : 'Test connection'}
+              </button>
+            </div>
             <p className="text-xs text-slate-500">
-              Pick a printer from the scan list or enter the IP manually. Port 9100 is the default
-              for network receipt printers.
+              Enter the IP from the printer’s network settings, test the connection, then save. Scan
+              is helpful but not required.
             </p>
           </div>
         )}

@@ -6,24 +6,28 @@ import {
   deleteUser,
   updateAdminCredentials,
   getAllRates,
+  getLiveRatesSnapshot,
   getRate,
   getRateChangeHistory,
   getTransactions,
   getUserById,
   listUsers,
   login,
+  saveExchangeRate,
   saveRate,
   voidTransaction
 } from '../database'
-import type { ExchangeRate } from '../database/types'
 import type {
   CreateTransactionInput,
   DateFilter,
   GetRateHistoryOptions,
+  LiveRatesSnapshot,
   RegisterUserInput,
-  UpdateAdminCredentialsInput,
+  SaveExchangeRateInput,
   SaveRateInput,
-  SupportedCurrency
+  SupportedCurrency,
+  Transaction,
+  UpdateAdminCredentialsInput
 } from '../database/types'
 import { isSessionExpiredError, requireSession, SessionExpiredError } from './auth'
 import { SESSION_EXPIRED_CODE } from '../shared/auth-constants'
@@ -32,7 +36,8 @@ import {
   listNetworkPrinters,
   listSystemPrinters,
   printTransactionReceipt,
-  savePrinterSettings
+  savePrinterSettings,
+  testNetworkPrinter
 } from './printer'
 import {
   createSession,
@@ -44,13 +49,12 @@ import {
 } from './session'
 import { checkForUpdates, getUpdateState, quitAndInstall } from './updater'
 import type { PrinterSettings } from '../shared/printer-types'
-import type { Transaction } from '../database/types'
 
 function broadcastLiveRates(): void {
-  const rates = getAllRates()
+  const snapshot = getLiveRatesSnapshot()
   for (const window of BrowserWindow.getAllWindows()) {
     if (!window.isDestroyed()) {
-      window.webContents.send('rates:updated', rates)
+      window.webContents.send('rates:updated', snapshot)
     }
   }
 }
@@ -86,6 +90,7 @@ const IPC_CHANNELS = [
   'rates:getAll',
   'rates:getLive',
   'rates:save',
+  'rates:saveExchange',
   'rates:get',
   'rates:getHistory',
   'transactions:create',
@@ -95,6 +100,7 @@ const IPC_CHANNELS = [
   'printer:saveSettings',
   'printer:list',
   'printer:listNetwork',
+  'printer:testNetwork',
   'printer:printReceipt',
   'update:getState',
   'update:check',
@@ -241,7 +247,7 @@ export function registerIpcHandlers(): void {
   })
 
   ipcMain.handle('rates:getLive', (_event, token: unknown) => {
-    const result = withSession(token, () => getAllRates() as ExchangeRate[])
+    const result = withSession(token, () => getLiveRatesSnapshot())
     if (result && typeof result === 'object' && 'code' in result) return result
     return result
   })
@@ -250,6 +256,26 @@ export function registerIpcHandlers(): void {
     try {
       const session = requireSession(token)
       const data = saveRate(input, {
+        userId: session.userId,
+        username: session.username
+      })
+      broadcastLiveRates()
+      return { success: true, data }
+    } catch (error) {
+      if (error instanceof SessionExpiredError) {
+        return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+      }
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to save rate'
+      }
+    }
+  })
+
+  ipcMain.handle('rates:saveExchange', (_event, token: unknown, input: SaveExchangeRateInput) => {
+    try {
+      const session = requireSession(token)
+      const data = saveExchangeRate(input, {
         userId: session.userId,
         username: session.username
       })
@@ -358,29 +384,50 @@ export function registerIpcHandlers(): void {
     }
   })
 
-  ipcMain.handle('printer:listNetwork', async (_event, token: unknown) => {
+  ipcMain.handle('printer:listNetwork', async (_event, token: unknown, knownHost?: unknown) => {
     try {
       requireSession(token)
-      return await listNetworkPrinters()
+      const host = typeof knownHost === 'string' ? knownHost : undefined
+      return await listNetworkPrinters(host)
     } catch (error) {
       return toIpcError(error)
     }
   })
 
-  ipcMain.handle('printer:printReceipt', async (_event, token: unknown, tx: Transaction) => {
-    try {
-      requireSession(token)
-      return await printTransactionReceipt(tx)
-    } catch (error) {
-      if (error instanceof SessionExpiredError) {
-        return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
-      }
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : 'Failed to print receipt'
+  ipcMain.handle(
+    'printer:testNetwork',
+    async (_event, token: unknown, host: unknown, port: unknown) => {
+      try {
+        requireSession(token)
+        if (typeof host !== 'string') {
+          return { success: false, error: 'Printer IP is required.' }
+        }
+        const printerPort = typeof port === 'number' ? port : Number(port)
+        return await testNetworkPrinter(host, printerPort || 9100)
+      } catch (error) {
+        return toIpcError(error)
       }
     }
-  })
+  )
+
+  ipcMain.handle(
+    'printer:printReceipt',
+    async (_event, token: unknown, tx: Transaction, language: unknown) => {
+      try {
+        requireSession(token)
+        const receiptLanguage = language === 'en' ? 'en' : 'sq'
+        return await printTransactionReceipt(tx, receiptLanguage)
+      } catch (error) {
+        if (error instanceof SessionExpiredError) {
+          return { success: false, code: SESSION_EXPIRED_CODE, error: error.message }
+        }
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : 'Failed to print receipt'
+        }
+      }
+    }
+  )
 
   ipcMain.handle('update:getState', () => getUpdateState())
 

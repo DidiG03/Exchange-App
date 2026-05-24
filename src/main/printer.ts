@@ -1,9 +1,11 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import type { Transaction } from '../database/types'
-import type { NetworkPrinterDevice, PrintResult, PrinterSettings } from '../shared/printer-types'
+import type { NetworkPrinterDevice, NetworkPrinterTestResult, PrintResult, PrinterSettings } from '../shared/printer-types'
+import type { ReceiptLanguage } from '../shared/receipt-language'
+import { isReceiptLanguage } from '../shared/receipt-language'
 import { printEscPosReceipt, printEscPosReceiptToNetwork } from './printer-escpos'
-import { scanNetworkPrinters } from './printer-network'
+import { scanNetworkPrinters, testNetworkPrinterConnection } from './printer-network'
 import { getPrinterSettings, savePrinterSettings } from './settings'
 
 export { getPrinterSettings, savePrinterSettings }
@@ -41,12 +43,23 @@ export async function listSystemPrinters(): Promise<string[]> {
   return []
 }
 
-export async function listNetworkPrinters(): Promise<NetworkPrinterDevice[]> {
-  return scanNetworkPrinters()
+export async function listNetworkPrinters(knownHost?: string): Promise<NetworkPrinterDevice[]> {
+  return scanNetworkPrinters({ knownHost })
 }
 
-export async function printTransactionReceipt(tx: Transaction): Promise<PrintResult> {
+export async function testNetworkPrinter(
+  host: string,
+  port: number
+): Promise<NetworkPrinterTestResult> {
+  return testNetworkPrinterConnection(host, port)
+}
+
+export async function printTransactionReceipt(
+  tx: Transaction,
+  language: ReceiptLanguage = 'sq'
+): Promise<PrintResult> {
   const settings = getPrinterSettings()
+  const receiptLanguage = isReceiptLanguage(language) ? language : 'sq'
 
   if (!settings.printEnabled) {
     return { success: false, error: 'Printing is disabled in settings.' }
@@ -64,7 +77,8 @@ export async function printTransactionReceipt(tx: Transaction): Promise<PrintRes
       await printEscPosReceiptToNetwork(
         settings.printerHost.trim(),
         settings.printerPort,
-        tx
+        tx,
+        receiptLanguage
       )
       return { success: true }
     } catch (error) {
@@ -87,7 +101,7 @@ export async function printTransactionReceipt(tx: Transaction): Promise<PrintRes
   }
 
   try {
-    await printEscPosReceipt(settings.printerName, tx)
+    await printEscPosReceipt(settings.printerName, tx, receiptLanguage)
     return { success: true }
   } catch (error) {
     return {

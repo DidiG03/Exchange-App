@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { CharacterSet, BreakLine, PrinterTypes, ThermalPrinter } from 'node-thermal-printer'
 import type { Transaction } from '../database/types'
 import type { ReceiptDocument } from '../shared/printer-types'
+import type { ReceiptLanguage } from '../shared/receipt-language'
 import {
   buildReceiptDocument,
   centerInBox,
@@ -50,7 +51,7 @@ function printMandatReceipt(printer: ThermalPrinter, doc: ReceiptDocument): void
   printer.newLine()
 
   printer.println(
-    padColumns('Shuma', 'Kursi', 'Shuma e Konvert.')
+    padColumns(doc.columnAmount, doc.columnRate, doc.columnConverted)
   )
   printer.println(padColumns(doc.shuma, doc.kursi, doc.shumaKonvertuar))
   printer.newLine()
@@ -79,13 +80,13 @@ function padColumns(a: string, b: string, c: string): string {
   return p(a, w1) + p(b, w2) + p(c, w3)
 }
 
-function buildEscPosBuffer(tx: Transaction): Buffer {
+function buildEscPosBuffer(tx: Transaction, language: ReceiptLanguage = 'sq'): Buffer {
   const settings = getPrinterSettings()
   const config: BureauReceiptConfig = {
     bureauName: settings.bureauName,
     city: settings.city
   }
-  const doc = buildReceiptDocument(tx, config)
+  const doc = buildReceiptDocument(tx, config, language)
 
   const stubPath = join(tmpdir(), 'exchange-bureau-escpos.stub')
   const printer = new ThermalPrinter({
@@ -142,17 +143,19 @@ function sendRawOnWindows(
 export async function printEscPosReceiptToNetwork(
   host: string,
   port: number,
-  tx: Transaction
+  tx: Transaction,
+  language: ReceiptLanguage = 'sq'
 ): Promise<void> {
-  const buffer = buildEscPosBuffer(tx)
+  const buffer = buildEscPosBuffer(tx, language)
   await sendRawToNetworkPrinter(host, port, buffer)
 }
 
 export async function printEscPosReceipt(
   printerName: string,
-  tx: Transaction
+  tx: Transaction,
+  language: ReceiptLanguage = 'sq'
 ): Promise<void> {
-  const buffer = buildEscPosBuffer(tx)
+  const buffer = buildEscPosBuffer(tx, language)
 
   if (process.platform === 'darwin') {
     sendRawOnMac(printerName, buffer)

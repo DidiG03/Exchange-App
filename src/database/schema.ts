@@ -47,4 +47,15 @@ CREATE TABLE IF NOT EXISTS rate_change_log (
 
 CREATE INDEX IF NOT EXISTS idx_rate_change_log_changed_at ON rate_change_log (changed_at DESC);
 CREATE INDEX IF NOT EXISTS idx_rate_change_log_currency ON rate_change_log (currency, changed_at DESC);
+
+CREATE TABLE IF NOT EXISTS exchange_pair_rates (
+  from_currency TEXT NOT NULL,
+  to_currency TEXT NOT NULL,
+  buy_rate REAL NOT NULL,
+  sell_rate REAL NOT NULL,
+  updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+  PRIMARY KEY (from_currency, to_currency)
+);
+
+CREATE INDEX IF NOT EXISTS idx_exchange_pair_rates_updated ON exchange_pair_rates (updated_at DESC);
 `

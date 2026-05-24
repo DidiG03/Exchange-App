@@ -69,6 +69,15 @@ export function isSupportedCurrency(value: string): value is SupportedCurrency {
   return (CURRENCY_CODES as readonly string[]).includes(value)
 }
 
+/** Albanian Lek — hub currency, also selectable in any currency pair. */
+export const BASE_CURRENCY = 'ALL' as const
+
+export type CurrencyCode = SupportedCurrency | typeof BASE_CURRENCY
+
+export function isCurrencyCode(value: string): value is CurrencyCode {
+  return value === BASE_CURRENCY || isSupportedCurrency(value)
+}
+
 /** Starter buy/sell rates (ALL per 1 unit) — replace with real bureau prices on Rates screen. */
 export const DEFAULT_RATE_SEEDS: { currency: SupportedCurrency; buy_rate: number; sell_rate: number }[] =
   [

@@ -93,4 +93,35 @@ export function migrateRateChangeLogTable(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_rate_change_log_changed_at ON rate_change_log (changed_at DESC);
     CREATE INDEX IF NOT EXISTS idx_rate_change_log_currency ON rate_change_log (currency, changed_at DESC);
   `)
+
+  const columns = database.prepare('PRAGMA table_info(rate_change_log)').all() as { name: string }[]
+  const names = new Set(columns.map((column) => column.name))
+
+  if (!names.has('from_currency')) {
+    database.exec('ALTER TABLE rate_change_log ADD COLUMN from_currency TEXT')
+  }
+  if (!names.has('to_currency')) {
+    database.exec('ALTER TABLE rate_change_log ADD COLUMN to_currency TEXT')
+  }
+
+  database.exec(`
+    UPDATE rate_change_log
+    SET from_currency = currency, to_currency = 'ALL'
+    WHERE from_currency IS NULL OR to_currency IS NULL
+  `)
+}
+
+export function migrateExchangePairRatesTable(database: Database.Database): void {
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS exchange_pair_rates (
+      from_currency TEXT NOT NULL,
+      to_currency TEXT NOT NULL,
+      buy_rate REAL NOT NULL,
+      sell_rate REAL NOT NULL,
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (from_currency, to_currency)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_exchange_pair_rates_updated ON exchange_pair_rates (updated_at DESC);
+  `)
 }

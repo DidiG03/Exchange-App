@@ -6,6 +6,12 @@ export interface NetworkPrinterDevice {
   label: string
 }
 
+export interface NetworkPrinterTestResult {
+  success: boolean
+  error?: string
+  port?: number
+}
+
 export interface PrinterSettings {
   connectionType: PrinterConnectionType
   printerName: string
@@ -26,6 +32,9 @@ export interface ReceiptDocument {
   mandatTitle: string
   invoiceLine: string
   clientLine: string
+  columnAmount: string
+  columnRate: string
+  columnConverted: string
   shuma: string
   kursi: string
   shumaKonvertuar: string
