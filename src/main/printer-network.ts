@@ -1,14 +1,19 @@
-import { networkInterfaces } from 'os'
+import { exec } from 'child_process'
+import { networkInterfaces, platform } from 'os'
+import { promisify } from 'util'
 import { Socket } from 'net'
 import type { NetworkPrinterDevice } from '../shared/printer-types'
 import { isValidIpv4 } from './settings'
 
+const execAsync = promisify(exec)
+const IS_WIN = platform() === 'win32'
+
 const DEFAULT_RAW_PORT = 9100
 const COMMON_RAW_PORTS = [9100, 9101, 9102] as const
-const SCAN_TIMEOUT_MS = 900
-const DIRECT_PROBE_TIMEOUT_MS = 2000
+const SCAN_TIMEOUT_MS = IS_WIN ? 1200 : 900
+const DIRECT_PROBE_TIMEOUT_MS = IS_WIN ? 6000 : 2000
 const SCAN_BATCH_SIZE = 32
-const SEND_TIMEOUT_MS = 12000
+const SEND_TIMEOUT_MS = 15000
 
 export interface NetworkPrinterScanOptions {
   knownHost?: string
@@ -24,17 +29,27 @@ function isIpv4Address(family: string | number): boolean {
   return family === 'IPv4' || family === 4
 }
 
-export function getLocalNetworkPrefixes(): string[] {
-  const prefixes = new Set<string>()
+export function getLocalIpv4Addresses(): string[] {
+  const addresses: string[] = []
 
   for (const iface of Object.values(networkInterfaces())) {
     if (!iface) continue
     for (const addr of iface) {
       if (!isIpv4Address(addr.family) || addr.internal) continue
-      const parts = addr.address.split('.')
-      if (parts.length !== 4) continue
-      prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`)
+      addresses.push(addr.address)
     }
+  }
+
+  return addresses
+}
+
+export function getLocalNetworkPrefixes(): string[] {
+  const prefixes = new Set<string>()
+
+  for (const address of getLocalIpv4Addresses()) {
+    const parts = address.split('.')
+    if (parts.length !== 4) continue
+    prefixes.add(`${parts[0]}.${parts[1]}.${parts[2]}`)
   }
 
   return [...prefixes]
@@ -64,7 +79,11 @@ function compareIpv4(a: string, b: string): number {
   return 0
 }
 
-function probeHost(host: string, port: number, timeoutMs: number): Promise<boolean> {
+function connectSocket(socket: Socket, host: string, port: number): void {
+  socket.connect({ port, host, family: 4 })
+}
+
+function probeHostNode(host: string, port: number, timeoutMs: number): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = new Socket()
     let settled = false
@@ -80,8 +99,61 @@ function probeHost(host: string, port: number, timeoutMs: number): Promise<boole
     socket.once('connect', () => finish(true))
     socket.once('timeout', () => finish(false))
     socket.once('error', () => finish(false))
-    socket.connect(port, host)
+    connectSocket(socket, host, port)
   })
+}
+
+async function probeHostWindows(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  const timeoutSec = Math.max(3, Math.ceil(timeoutMs / 1000))
+  const command =
+    `powershell -NoProfile -Command "$ProgressPreference='SilentlyContinue';` +
+    `$r = Test-NetConnection -ComputerName '${host}' -Port ${port} -WarningAction SilentlyContinue;` +
+    `if ($r.TcpTestSucceeded) { exit 0 } else { exit 1 }"`
+
+  try {
+    await execAsync(command, {
+      timeout: timeoutSec * 1000 + 2000,
+      windowsHide: true
+    })
+    return true
+  } catch {
+    return false
+  }
+}
+
+async function probeHost(host: string, port: number, timeoutMs: number): Promise<boolean> {
+  if (IS_WIN) {
+    const [nodeOpen, winOpen] = await Promise.all([
+      probeHostNode(host, port, timeoutMs),
+      probeHostWindows(host, port, timeoutMs)
+    ])
+    return nodeOpen || winOpen
+  }
+
+  return probeHostNode(host, port, timeoutMs)
+}
+
+function buildReachabilityHint(host: string): string {
+  const printerPrefix = prefixFromHost(host)
+  const localAddresses = getLocalIpv4Addresses()
+  const localPrefixes = getLocalNetworkPrefixes()
+
+  if (printerPrefix && localPrefixes.length > 0 && !localPrefixes.includes(printerPrefix)) {
+    return (
+      `This PC is on ${localPrefixes.map((prefix) => `${prefix}.x`).join(', ')}` +
+      ` (IP: ${localAddresses.join(', ') || 'unknown'}), but the printer is ${printerPrefix}.x. ` +
+      'Connect this Windows PC to the same Wi‑Fi/LAN as the printer. If you use a VM, switch the network adapter to Bridged instead of NAT.'
+    )
+  }
+
+  if (IS_WIN) {
+    return (
+      'On Windows, also check that raw TCP port 9100 is enabled on the printer, ' +
+      'Windows Firewall allows outbound connections for Exchange Bureau, and the IP is correct in the printer network settings.'
+    )
+  }
+
+  return 'Check the IP, port, and that raw TCP printing is enabled on the printer.'
 }
 
 async function probeHostPorts(
@@ -110,7 +182,9 @@ async function scanPrefix(prefix: string): Promise<NetworkPrinterDevice[]> {
 
   for (let index = 0; index < hosts.length; index += SCAN_BATCH_SIZE) {
     const batch = hosts.slice(index, index + SCAN_BATCH_SIZE)
-    const results = await Promise.all(batch.map((host) => probeHostPorts(host, COMMON_RAW_PORTS, SCAN_TIMEOUT_MS)))
+    const results = await Promise.all(
+      batch.map((host) => probeHostPorts(host, COMMON_RAW_PORTS, SCAN_TIMEOUT_MS))
+    )
     for (const devices of results) {
       found.push(...devices)
     }
@@ -162,7 +236,7 @@ export async function testNetworkPrinterConnection(
 
   return {
     success: false,
-    error: `Could not reach ${trimmedHost} on ports ${portsToTry.join(', ')}. Check the IP, port, and that raw TCP printing is enabled on the printer.`
+    error: `Could not reach ${trimmedHost} on ports ${portsToTry.join(', ')}. ${buildReachabilityHint(trimmedHost)}`
   }
 }
 
@@ -195,6 +269,6 @@ export function sendRawToNetworkPrinter(
     })
     socket.once('timeout', () => finish(new Error('Network printer connection timed out')))
     socket.once('error', (error) => finish(error))
-    socket.connect(port, host)
+    connectSocket(socket, host, port)
   })
 }

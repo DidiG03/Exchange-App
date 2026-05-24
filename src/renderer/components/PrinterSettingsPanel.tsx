@@ -379,8 +379,8 @@ export function PrinterSettingsPanel(): React.JSX.Element {
               </button>
             </div>
             <p className="text-xs text-slate-500">
-              Enter the IP from the printer’s network settings, test the connection, then save. Scan
-              is helpful but not required.
+              Enter the IP from the printer’s network settings, test the connection, then save. The
+              Windows PC must be on the same Wi‑Fi/LAN as the printer.
             </p>
           </div>
         )}
