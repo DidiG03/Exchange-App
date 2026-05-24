@@ -3,9 +3,6 @@ import type { ReceiptDocument } from '../shared/printer-types'
 import type { ReceiptLanguage } from '../shared/receipt-language'
 
 const LINE_WIDTH = 48
-const COL_SHUMA = 14
-const COL_KURSI = 8
-const COL_KONVERT = 22
 
 export interface BureauReceiptConfig {
   bureauName: string
@@ -17,10 +14,12 @@ const RECEIPT_COPY = {
     mandatTitle: 'Mandat Konvertim Valute',
     invoicePrefix: 'Nr. Fatures',
     datePrefix: 'Data',
-    clientLine: 'Klienti  .',
+    timePrefix: 'Ora',
     columnAmount: 'Shuma',
     columnRate: 'Kursi',
-    columnConverted: 'Shuma e Konvert.',
+    columnConverted: 'Konvertuar',
+    totalLabel: 'TOTALI',
+    thankYou: 'Faleminderit!',
     voidBanner: '*** ANULLUAR ***',
     voidReason: 'Arsye',
     voidOperator: 'Operator',
@@ -31,10 +30,12 @@ const RECEIPT_COPY = {
     mandatTitle: 'Currency Exchange Receipt',
     invoicePrefix: 'Invoice No.',
     datePrefix: 'Date',
-    clientLine: 'Customer',
+    timePrefix: 'Time',
     columnAmount: 'Amount',
     columnRate: 'Rate',
     columnConverted: 'Converted',
+    totalLabel: 'TOTAL',
+    thankYou: 'Thank you!',
     voidBanner: '*** VOIDED ***',
     voidReason: 'Reason',
     voidOperator: 'Operator',
@@ -42,17 +43,6 @@ const RECEIPT_COPY = {
     footerJoiner: 'on'
   }
 } as const
-
-function padRight(text: string, width: number): string {
-  if (text.length >= width) return text.slice(0, width)
-  return text + ' '.repeat(width - text.length)
-}
-
-function padLine(left: string, right: string): string {
-  const gap = LINE_WIDTH - left.length - right.length
-  if (gap >= 1) return left + ' '.repeat(gap) + right
-  return `${left} ${right}`
-}
 
 /** Albanian style: 1.097.868,50 */
 export function formatAlbanianNumber(value: number, decimals: number): string {
@@ -76,11 +66,7 @@ function formatCurrency(amount: number, currency: string, decimals = 2): string 
   return `${formatAlbanianNumber(amount, decimals)} ${currency}`
 }
 
-function formatColumns(shuma: string, kursi: string, konvert: string): string {
-  return padRight(shuma, COL_SHUMA) + padRight(kursi, COL_KURSI) + padRight(konvert, COL_KONVERT)
-}
-
-function formatDateParts(iso: string): { date: string; dateTime: string } {
+function formatDateParts(iso: string): { date: string; time: string; dateTime: string } {
   const d = new Date(iso)
   const date = d.toLocaleDateString('en-GB', {
     day: '2-digit',
@@ -93,37 +79,44 @@ function formatDateParts(iso: string): { date: string; dateTime: string } {
     second: '2-digit',
     hour12: false
   })
-  return { date, dateTime: `${date} ${time}` }
+  return { date, time, dateTime: `${date} ${time}` }
+}
+
+function buildPairLine(tx: Transaction): string {
+  if (tx.type === 'buy') return `${tx.currency}  -->  ALL`
+  if (tx.type === 'sell') return `ALL  -->  ${tx.currency}`
+  const to = tx.to_currency ?? tx.currency
+  return `${tx.currency}  -->  ${to}`
 }
 
 function buildAmounts(tx: Transaction): {
   shuma: string
   kursi: string
   shumaKonvertuar: string
-  totalBox: string
+  totalAmount: string
 } {
   if (tx.type === 'buy') {
     const shuma = formatCurrency(tx.amount_given, tx.currency, 0)
     const kursi = formatKursi(tx.rate_applied)
     const konvert = formatLek(tx.amount_received, 0)
-    const totalBox = formatLek(tx.amount_received, 2)
-    return { shuma, kursi, shumaKonvertuar: konvert, totalBox }
+    const totalAmount = formatLek(tx.amount_received, 2)
+    return { shuma, kursi, shumaKonvertuar: konvert, totalAmount }
   }
 
   if (tx.type === 'sell') {
     const shuma = formatLek(tx.amount_given, 0)
     const kursi = formatKursi(tx.rate_applied)
     const konvert = formatCurrency(tx.amount_received, tx.currency, 0)
-    const totalBox = formatCurrency(tx.amount_received, tx.currency, 2)
-    return { shuma, kursi, shumaKonvertuar: konvert, totalBox }
+    const totalAmount = formatCurrency(tx.amount_received, tx.currency, 2)
+    return { shuma, kursi, shumaKonvertuar: konvert, totalAmount }
   }
 
   const to = tx.to_currency ?? tx.currency
   const shuma = formatCurrency(tx.amount_given, tx.currency, 0)
   const kursi = formatKursi(tx.rate_applied)
   const konvert = formatCurrency(tx.amount_received, to, 0)
-  const totalBox = formatCurrency(tx.amount_received, to, 2)
-  return { shuma, kursi, shumaKonvertuar: konvert, totalBox }
+  const totalAmount = formatCurrency(tx.amount_received, to, 2)
+  return { shuma, kursi, shumaKonvertuar: konvert, totalAmount }
 }
 
 export function buildReceiptDocument(
@@ -132,22 +125,26 @@ export function buildReceiptDocument(
   language: ReceiptLanguage = 'sq'
 ): ReceiptDocument {
   const copy = RECEIPT_COPY[language]
-  const { date, dateTime } = formatDateParts(tx.created_at)
+  const { date, time, dateTime } = formatDateParts(tx.created_at)
   const amounts = buildAmounts(tx)
 
   const doc: ReceiptDocument = {
     bureauName: config.bureauName.toUpperCase(),
     mandatTitle: copy.mandatTitle,
-    invoiceLine: padLine(`${copy.invoicePrefix} ${tx.id}`, `${copy.datePrefix} ${date}`),
-    clientLine: copy.clientLine,
+    invoiceLeft: `${copy.invoicePrefix} ${tx.id}`,
+    dateRight: `${copy.datePrefix} ${date}`,
+    timeLine: `${copy.timePrefix} ${time}`,
+    pairLine: buildPairLine(tx),
     columnAmount: copy.columnAmount,
     columnRate: copy.columnRate,
     columnConverted: copy.columnConverted,
     shuma: amounts.shuma,
     kursi: amounts.kursi,
     shumaKonvertuar: amounts.shumaKonvertuar,
-    totalBox: amounts.totalBox,
-    footer: `${config.city}, ${copy.footerJoiner} ${dateTime}`
+    totalLabel: copy.totalLabel,
+    totalAmount: amounts.totalAmount,
+    footer: `${config.city}, ${copy.footerJoiner} ${dateTime}`,
+    thankYou: copy.thankYou
   }
 
   if (tx.voided_at) {
@@ -170,25 +167,50 @@ export function formatReceiptLines(
   language: ReceiptLanguage = 'sq'
 ): string[] {
   const doc = buildReceiptDocument(tx, config, language)
-  return [
+  const lines = [
     doc.bureauName,
-    '.'.repeat(LINE_WIDTH),
     doc.mandatTitle,
-    doc.invoiceLine,
-    doc.clientLine,
+    `${doc.invoiceLeft} | ${doc.dateRight}`,
+    doc.timeLine,
+    doc.pairLine ?? '',
     '',
-    formatColumns(doc.columnAmount, doc.columnRate, doc.columnConverted),
-    formatColumns(doc.shuma, doc.kursi, doc.shumaKonvertuar),
-    doc.totalBox,
+    formatReceiptTableRow(doc.columnAmount, doc.columnRate, doc.columnConverted),
+    formatReceiptTableRow(doc.shuma, doc.kursi, doc.shumaKonvertuar),
+    `${doc.totalLabel}: ${doc.totalAmount}`,
     doc.footer,
+    doc.thankYou,
     ''
   ]
+  return lines.filter((line, index, arr) => line !== '' || index < arr.length - 1)
 }
 
-export function centerInBox(text: string, width: number): string {
-  const inner = width - 2
-  const trimmed = text.length > inner ? text.slice(0, inner) : text
-  const pad = Math.max(0, inner - trimmed.length)
+const COL_AMOUNT = 16
+const COL_RATE = 10
+const COL_CONVERTED = 22
+
+function padColumn(text: string, width: number, align: 'left' | 'center' | 'right' = 'left'): string {
+  const trimmed = text.length > width ? text.slice(0, width) : text
+  const pad = width - trimmed.length
+  if (align === 'right') return ' '.repeat(pad) + trimmed
+  if (align === 'center') {
+    const left = Math.floor(pad / 2)
+    return ' '.repeat(left) + trimmed + ' '.repeat(pad - left)
+  }
+  return trimmed + ' '.repeat(pad)
+}
+
+/** Single-line three-column row (48 chars) — avoids thermal printer table wrap glitches */
+export function formatReceiptTableRow(amount: string, rate: string, converted: string): string {
+  return (
+    padColumn(amount, COL_AMOUNT, 'left') +
+    padColumn(rate, COL_RATE, 'center') +
+    padColumn(converted, COL_CONVERTED, 'right')
+  )
+}
+
+export function centerText(text: string, width: number): string {
+  const trimmed = text.length > width ? text.slice(0, width) : text
+  const pad = Math.max(0, width - trimmed.length)
   const left = Math.floor(pad / 2)
   return ' '.repeat(left) + trimmed + ' '.repeat(pad - left)
 }

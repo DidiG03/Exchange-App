@@ -15,6 +15,7 @@ import { BASE_CURRENCY, DEFAULT_RATE_SEEDS, isCurrencyCode, isSupportedCurrency 
 import type {
   CreateTransactionInput,
   DateFilter,
+  GetTransactionsFilter,
   ExchangePairRate,
   ExchangeRate,
   GetRateHistoryOptions,
@@ -694,9 +695,61 @@ function dateFilterClause(
   }
 }
 
-export function getTransactions(filter: DateFilter = 'all'): Transaction[] {
+const DATE_INPUT_RE = /^\d{4}-\d{2}-\d{2}$/
+
+export function normalizeGetTransactionsFilter(
+  input: DateFilter | GetTransactionsFilter | unknown
+): GetTransactionsFilter {
+  if (typeof input === 'string') {
+    if (input === 'today' || input === 'week' || input === 'all') {
+      return { preset: input }
+    }
+    return { preset: 'all' }
+  }
+
+  if (!input || typeof input !== 'object') {
+    return { preset: 'all' }
+  }
+
+  const raw = input as GetTransactionsFilter
+  const from = typeof raw.from === 'string' ? raw.from.trim() : ''
+  const to = typeof raw.to === 'string' ? raw.to.trim() : ''
+
+  if (DATE_INPUT_RE.test(from) && DATE_INPUT_RE.test(to)) {
+    if (from <= to) {
+      return { from, to }
+    }
+    return { from: to, to: from }
+  }
+
+  const preset = raw.preset
+  if (preset === 'today' || preset === 'week' || preset === 'all') {
+    return { preset }
+  }
+
+  return { preset: 'all' }
+}
+
+function transactionDateClause(
+  filter: GetTransactionsFilter,
+  column = 'created_at'
+): { sql: string; params: string[] } {
+  if (filter.from && filter.to) {
+    return {
+      sql: `date(${column}) >= date(?) AND date(${column}) <= date(?)`,
+      params: [filter.from, filter.to]
+    }
+  }
+
+  return dateFilterClause(filter.preset ?? 'all', column)
+}
+
+export function getTransactions(
+  filter: DateFilter | GetTransactionsFilter = 'all'
+): Transaction[] {
   const database = getDb()
-  const { sql } = dateFilterClause(filter, 'created_at')
+  const normalized = normalizeGetTransactionsFilter(filter)
+  const { sql, params } = transactionDateClause(normalized, 'created_at')
 
   return database
     .prepare(
@@ -705,7 +758,7 @@ export function getTransactions(filter: DateFilter = 'all'): Transaction[] {
        WHERE ${sql}
        ORDER BY datetime(created_at) DESC`
     )
-    .all() as Transaction[]
+    .all(...params) as Transaction[]
 }
 
 export function isTransactionVoided(tx: Transaction): boolean {
@@ -727,6 +780,7 @@ export type {
   RateChangeLogEntry,
   GetRateHistoryOptions,
   DateFilter,
+  GetTransactionsFilter,
   SupportedCurrency,
   TransactionType
 }

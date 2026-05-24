@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { DateFilter, Transaction } from '../../database/types'
+import type { DateFilter, GetTransactionsFilter, Transaction } from '../../database/types'
 import { VoidTransactionDialog } from '../components/VoidTransactionDialog'
 import {
   formatAll,
@@ -8,11 +8,48 @@ import {
   formatForeign,
 } from '../utils/format'
 
-const FILTERS: { value: DateFilter; label: string }[] = [
+type HistoryPeriod = DateFilter | 'custom'
+
+const PRESET_FILTERS: { value: HistoryPeriod; label: string }[] = [
   { value: 'today', label: 'Today' },
   { value: 'week', label: 'This week' },
-  { value: 'all', label: 'All time' }
+  { value: 'all', label: 'All time' },
+  { value: 'custom', label: 'Custom' }
 ]
+
+function toDateInputValue(date: Date): string {
+  const y = date.getFullYear()
+  const m = String(date.getMonth() + 1).padStart(2, '0')
+  const d = String(date.getDate()).padStart(2, '0')
+  return `${y}-${m}-${d}`
+}
+
+function daysAgo(n: number): Date {
+  const d = new Date()
+  d.setDate(d.getDate() - n)
+  d.setHours(0, 0, 0, 0)
+  return d
+}
+
+function formatRangeLabel(from: string, to: string): string {
+  const fmt = (iso: string) => {
+    const [, month, day] = iso.split('-')
+    const year = iso.slice(0, 4)
+    return `${day}/${month}/${year}`
+  }
+  return `${fmt(from)} – ${fmt(to)}`
+}
+
+function buildQueryFilter(
+  period: HistoryPeriod,
+  customFrom: string,
+  customTo: string
+): DateFilter | GetTransactionsFilter {
+  if (period === 'custom') {
+    return { from: customFrom, to: customTo }
+  }
+  return { preset: period }
+}
 
 function formatTransactionPair(tx: Transaction): string {
   if (tx.type === 'buy') return `${tx.currency} → ALL`
@@ -54,28 +91,155 @@ function isVoided(tx: Transaction): boolean {
   return tx.voided_at != null
 }
 
+type SortColumn =
+  | 'date'
+  | 'status'
+  | 'operator'
+  | 'currencies'
+  | 'amountGiven'
+  | 'amountReceived'
+  | 'rate'
+
+type SortDirection = 'asc' | 'desc'
+
+function compareTransactions(
+  a: Transaction,
+  b: Transaction,
+  column: SortColumn,
+  direction: SortDirection
+): number {
+  let cmp = 0
+
+  switch (column) {
+    case 'date':
+      cmp = new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+      break
+    case 'status':
+      cmp = Number(isVoided(a)) - Number(isVoided(b))
+      break
+    case 'operator':
+      cmp = (a.created_by_username ?? '').localeCompare(b.created_by_username ?? '', 'sq')
+      break
+    case 'currencies':
+      cmp = formatTransactionPair(a).localeCompare(formatTransactionPair(b), 'sq')
+      break
+    case 'amountGiven':
+      cmp = a.amount_given - b.amount_given
+      break
+    case 'amountReceived':
+      cmp = a.amount_received - b.amount_received
+      break
+    case 'rate':
+      cmp = a.rate_applied - b.rate_applied
+      break
+  }
+
+  return direction === 'asc' ? cmp : -cmp
+}
+
+function SortableHeader({
+  label,
+  column,
+  activeColumn,
+  activeDirection,
+  onSort,
+  className = ''
+}: {
+  label: string
+  column: SortColumn
+  activeColumn: SortColumn
+  activeDirection: SortDirection
+  onSort: (column: SortColumn, direction: SortDirection) => void
+  className?: string
+}): React.JSX.Element {
+  const isActive = activeColumn === column
+
+  return (
+    <th
+      className={`px-4 py-3 text-left font-medium text-slate-600 ${className}`.trim()}
+    >
+      <div className="flex items-center gap-1">
+        <span>{label}</span>
+        <span className="inline-flex flex-col -space-y-0.5">
+          <button
+            type="button"
+            onClick={() => onSort(column, 'asc')}
+            aria-label={`Sort ${label} lowest to highest`}
+            className={`rounded px-0.5 text-[10px] leading-none transition-colors ${
+              isActive && activeDirection === 'asc'
+                ? 'bg-navy-900 text-white'
+                : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+            }`}
+          >
+            ▲
+          </button>
+          <button
+            type="button"
+            onClick={() => onSort(column, 'desc')}
+            aria-label={`Sort ${label} highest to lowest`}
+            className={`rounded px-0.5 text-[10px] leading-none transition-colors ${
+              isActive && activeDirection === 'desc'
+                ? 'bg-navy-900 text-white'
+                : 'text-slate-400 hover:bg-slate-200 hover:text-slate-700'
+            }`}
+          >
+            ▼
+          </button>
+        </span>
+      </div>
+    </th>
+  )
+}
+
 export function HistoryPage(): React.JSX.Element {
-  const [filter, setFilter] = useState<DateFilter>('all')
+  const [period, setPeriod] = useState<HistoryPeriod>('all')
+  const [customFrom, setCustomFrom] = useState(() => toDateInputValue(daysAgo(6)))
+  const [customTo, setCustomTo] = useState(() => toDateInputValue(new Date()))
   const [hideVoided, setHideVoided] = useState(false)
   const [transactions, setTransactions] = useState<Transaction[]>([])
   const [loading, setLoading] = useState(true)
   const [voidTarget, setVoidTarget] = useState<Transaction | null>(null)
   const [voidSuccess, setVoidSuccess] = useState<string | null>(null)
+  const [sortColumn, setSortColumn] = useState<SortColumn>('date')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+
+  const queryFilter = useMemo(
+    () => buildQueryFilter(period, customFrom, customTo),
+    [period, customFrom, customTo]
+  )
+
+  const periodLabel = useMemo(() => {
+    if (period === 'custom') return formatRangeLabel(customFrom, customTo)
+    if (period === 'today') return 'today'
+    if (period === 'week') return 'the last 7 days'
+    return 'all time'
+  }, [period, customFrom, customTo])
 
   useEffect(() => {
     async function load(): Promise<void> {
       setLoading(true)
-      const data = await window.api.getTransactions(filter)
+      const data = await window.api.getTransactions(queryFilter)
       setTransactions(Array.isArray(data) ? data : [])
       setLoading(false)
     }
     void load()
-  }, [filter])
+  }, [queryFilter])
 
   const visibleTransactions = useMemo(
     () => (hideVoided ? transactions.filter((tx) => !isVoided(tx)) : transactions),
     [transactions, hideVoided]
   )
+
+  const sortedTransactions = useMemo(() => {
+    const list = [...visibleTransactions]
+    list.sort((a, b) => compareTransactions(a, b, sortColumn, sortDirection))
+    return list
+  }, [visibleTransactions, sortColumn, sortDirection])
+
+  function handleSort(column: SortColumn, direction: SortDirection): void {
+    setSortColumn(column)
+    setSortDirection(direction)
+  }
 
   const voidedCount = useMemo(
     () => transactions.filter((tx) => isVoided(tx)).length,
@@ -93,42 +257,68 @@ export function HistoryPage(): React.JSX.Element {
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div>
           <p className="text-sm text-slate-600">
-            All logged exchange transactions, newest first. Voided rows stay in the database for
-            inspection.
+            All logged exchange transactions. Use column arrows to sort. Voided rows stay in the
+            database for inspection.
           </p>
-          {!loading && transactions.length > 0 && (
+          {!loading && (
             <p className="mt-1 text-xs text-slate-500">
-              {transactions.length} in this period
+              {transactions.length} in {periodLabel}
               {voidedCount > 0 ? ` · ${voidedCount} voided` : ''}
             </p>
           )}
         </div>
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
-            <input
-              type="checkbox"
-              checked={hideVoided}
-              onChange={(e) => setHideVoided(e.target.checked)}
-              className="rounded border-slate-300 text-navy-900 focus:ring-navy-700"
-            />
-            Hide voided
-          </label>
-          <div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
-            {FILTERS.map((item) => (
-              <button
-                key={item.value}
-                type="button"
-                onClick={() => setFilter(item.value)}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  filter === item.value
-                    ? 'bg-navy-900 text-white'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+        <div className="flex flex-col items-end gap-2">
+          <div className="flex flex-wrap items-center justify-end gap-3">
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-slate-600">
+              <input
+                type="checkbox"
+                checked={hideVoided}
+                onChange={(e) => setHideVoided(e.target.checked)}
+                className="rounded border-slate-300 text-navy-900 focus:ring-navy-700"
+              />
+              Hide voided
+            </label>
+            <div className="flex rounded-lg border border-slate-200 bg-white p-1 shadow-sm">
+              {PRESET_FILTERS.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setPeriod(item.value)}
+                  className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                    period === item.value
+                      ? 'bg-navy-900 text-white'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
+          {period === 'custom' && (
+            <div className="flex flex-wrap items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 shadow-sm">
+              <label className="flex items-center gap-1.5 text-sm text-slate-600">
+                <span className="font-medium">From</span>
+                <input
+                  type="date"
+                  value={customFrom}
+                  max={customTo}
+                  onChange={(e) => setCustomFrom(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+                />
+              </label>
+              <label className="flex items-center gap-1.5 text-sm text-slate-600">
+                <span className="font-medium">To</span>
+                <input
+                  type="date"
+                  value={customTo}
+                  min={customFrom}
+                  onChange={(e) => setCustomTo(e.target.value)}
+                  className="rounded-md border border-slate-300 px-2 py-1 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+                />
+              </label>
+            </div>
+          )}
         </div>
       </div>
 
@@ -151,21 +341,62 @@ export function HistoryPage(): React.JSX.Element {
           <table className="min-w-full divide-y divide-slate-200 text-sm">
             <thead className="bg-slate-50">
               <tr>
-                <th className="whitespace-nowrap px-4 py-3 text-left font-medium text-slate-600">
-                  Date / Time
-                </th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Status</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Operator</th>
+                <SortableHeader
+                  label="Date / Time"
+                  column="date"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                  className="whitespace-nowrap"
+                />
+                <SortableHeader
+                  label="Status"
+                  column="status"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Operator"
+                  column="operator"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                />
                 <th className="px-4 py-3 text-left font-medium text-slate-600">Type</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Currencies</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Amount given</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Amount received</th>
-                <th className="px-4 py-3 text-left font-medium text-slate-600">Rate applied</th>
+                <SortableHeader
+                  label="Currencies"
+                  column="currencies"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Amount given"
+                  column="amountGiven"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Amount received"
+                  column="amountReceived"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                />
+                <SortableHeader
+                  label="Rate applied"
+                  column="rate"
+                  activeColumn={sortColumn}
+                  activeDirection={sortDirection}
+                  onSort={handleSort}
+                />
                 <th className="px-4 py-3 text-left font-medium text-slate-600">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {visibleTransactions.map((tx) => {
+              {sortedTransactions.map((tx) => {
                 const voided = isVoided(tx)
                 return (
                   <tr

@@ -10,6 +10,7 @@ import {
   getRate,
   getRateChangeHistory,
   getTransactions,
+  normalizeGetTransactionsFilter,
   getUserById,
   listUsers,
   login,
@@ -20,6 +21,7 @@ import {
 import type {
   CreateTransactionInput,
   DateFilter,
+  GetTransactionsFilter,
   GetRateHistoryOptions,
   LiveRatesSnapshot,
   RegisterUserInput,
@@ -328,11 +330,15 @@ export function registerIpcHandlers(): void {
     }
   )
 
-  ipcMain.handle('transactions:getAll', (_event, token: unknown, filter: DateFilter = 'all') => {
-    const result = withSession(token, () => getTransactions(filter))
-    if (result && typeof result === 'object' && 'code' in result) return result
-    return result
-  })
+  ipcMain.handle(
+    'transactions:getAll',
+    (_event, token: unknown, filter: DateFilter | GetTransactionsFilter = 'all') => {
+      const normalized = normalizeGetTransactionsFilter(filter)
+      const result = withSession(token, () => getTransactions(normalized))
+      if (result && typeof result === 'object' && 'code' in result) return result
+      return result
+    }
+  )
 
   ipcMain.handle(
     'transactions:void',

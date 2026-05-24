@@ -8,7 +8,7 @@ import type { ReceiptDocument } from '../shared/printer-types'
 import type { ReceiptLanguage } from '../shared/receipt-language'
 import {
   buildReceiptDocument,
-  centerInBox,
+  formatReceiptTableRow,
   type BureauReceiptConfig
 } from './receipt-format'
 import { getPrinterSettings } from './settings'
@@ -16,27 +16,13 @@ import { loadPrinterDriver } from './printer-driver'
 import { sendRawToNetworkPrinter } from './printer-network'
 import { sendRawToWindowsPrinter } from './printer-windows-raw'
 
-const LINE_WIDTH = 48
-const BOX_WIDTH = 40
-
 function printMandatReceipt(printer: ThermalPrinter, doc: ReceiptDocument): void {
-  printer.alignLeft()
-  printer.bold(true)
-  printer.println(doc.bureauName)
-  printer.bold(false)
-
-  printer.println('.'.repeat(LINE_WIDTH))
-  printer.alignCenter()
-  printer.bold(true)
-  printer.println(doc.mandatTitle)
-  printer.bold(false)
-  printer.alignLeft()
-  printer.newLine()
-
   if (doc.voidBanner) {
     printer.alignCenter()
+    printer.invert(true)
     printer.bold(true)
     printer.println(doc.voidBanner)
+    printer.invert(false)
     printer.bold(false)
     printer.alignLeft()
     if (doc.voidDetail) {
@@ -45,40 +31,65 @@ function printMandatReceipt(printer: ThermalPrinter, doc: ReceiptDocument): void
       }
     }
     printer.newLine()
+    printer.drawLine('-')
   }
 
-  printer.println(doc.invoiceLine)
-  printer.println(doc.clientLine)
-  printer.newLine()
-
-  printer.println(
-    padColumns(doc.columnAmount, doc.columnRate, doc.columnConverted)
-  )
-  printer.println(padColumns(doc.shuma, doc.kursi, doc.shumaKonvertuar))
-  printer.newLine()
-
-  const boxLine = '-'.repeat(BOX_WIDTH)
-  const centered = centerInBox(doc.totalBox, BOX_WIDTH)
-
   printer.alignCenter()
-  printer.println(`+${boxLine}+`)
   printer.bold(true)
-  printer.println(`|${centered}|`)
+  printer.setTextDoubleWidth()
+  printer.println(doc.bureauName)
+  printer.setTextNormal()
   printer.bold(false)
-  printer.println(`+${boxLine}+`)
+  printer.newLine()
+
+  printer.drawLine('=')
+  printer.bold(true)
+  printer.println(doc.mandatTitle)
+  printer.bold(false)
+  printer.drawLine('=')
   printer.newLine()
 
   printer.alignLeft()
-  printer.println(doc.footer)
+  printer.leftRight(doc.invoiceLeft, doc.dateRight)
+  printer.println(doc.timeLine)
   printer.newLine()
-}
+  printer.alignCenter()
+  printer.bold(true)
+  printer.println(doc.pairLine ?? '')
+  printer.bold(false)
+  printer.alignLeft()
+  printer.newLine()
 
-function padColumns(a: string, b: string, c: string): string {
-  const w1 = 14
-  const w2 = 8
-  const w3 = 22
-  const p = (t: string, w: number) => (t.length >= w ? t.slice(0, w) : t + ' '.repeat(w - t.length))
-  return p(a, w1) + p(b, w2) + p(c, w3)
+  printer.drawLine('-')
+  printer.bold(true)
+  printer.println(
+    formatReceiptTableRow(doc.columnAmount, doc.columnRate, doc.columnConverted)
+  )
+  printer.bold(false)
+  printer.drawLine('-')
+  printer.println(formatReceiptTableRow(doc.shuma, doc.kursi, doc.shumaKonvertuar))
+  printer.drawLine('-')
+  printer.newLine()
+
+  printer.alignCenter()
+  printer.bold(true)
+  printer.println(doc.totalLabel)
+  printer.setTextDoubleHeight()
+  printer.setTextDoubleWidth()
+  printer.println(doc.totalAmount)
+  printer.setTextNormal()
+  printer.bold(false)
+  printer.newLine()
+
+  printer.drawLine('=')
+  printer.alignCenter()
+  printer.println(doc.footer)
+  printer.alignLeft()
+  printer.newLine()
+  printer.bold(true)
+  printer.println(doc.thankYou)
+  printer.bold(false)
+  printer.newLine()
 }
 
 function buildEscPosBuffer(tx: Transaction, language: ReceiptLanguage = 'sq'): Buffer {
@@ -95,9 +106,9 @@ function buildEscPosBuffer(tx: Transaction, language: ReceiptLanguage = 'sq'): B
     interface: stubPath,
     characterSet: CharacterSet.PC852_LATIN2,
     removeSpecialCharacters: false,
-    lineCharacter: '.',
+    lineCharacter: '-',
     breakLine: BreakLine.WORD,
-    width: LINE_WIDTH
+    width: 48
   })
 
   printMandatReceipt(printer, doc)

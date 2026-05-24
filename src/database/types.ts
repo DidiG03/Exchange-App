@@ -6,6 +6,13 @@ export type TransactionType = 'buy' | 'sell' | 'cross'
 
 export type DateFilter = 'today' | 'week' | 'all'
 
+/** Preset period or inclusive YYYY-MM-DD range (local calendar days). */
+export interface GetTransactionsFilter {
+  preset?: DateFilter
+  from?: string
+  to?: string
+}
+
 export type UserRole = 'admin' | 'staff'
 
 export interface User {

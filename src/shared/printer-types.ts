@@ -30,16 +30,20 @@ export interface PrintResult {
 export interface ReceiptDocument {
   bureauName: string
   mandatTitle: string
-  invoiceLine: string
-  clientLine: string
+  invoiceLeft: string
+  dateRight: string
+  timeLine: string
+  pairLine?: string
   columnAmount: string
   columnRate: string
   columnConverted: string
   shuma: string
   kursi: string
   shumaKonvertuar: string
-  totalBox: string
+  totalLabel: string
+  totalAmount: string
   footer: string
+  thankYou: string
   voidBanner?: string
   voidDetail?: string
 }

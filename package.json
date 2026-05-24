@@ -1,6 +1,6 @@
 {
   "name": "exchange-bureau",
-  "version": "1.0.10",
+  "version": "1.0.11",
   "description": "Currency exchange bureau desktop app for Albania",
   "main": "./out/main/index.js",
   "author": "Exchange Bureau",
@@ -15,9 +15,9 @@
     "build": "electron-vite build",
     "preview": "electron-vite preview",
     "postinstall": "electron-builder install-app-deps",
-    "dist": "npm run build && electron-builder --win",
-    "dist:publish": "npm run build && electron-builder --win --publish always",
-    "dist:dir": "npm run build && electron-builder --win --dir"
+    "dist": "npm run build && electron-builder --win && npm run postinstall",
+    "dist:publish": "npm run build && electron-builder --win --publish always && npm run postinstall",
+    "dist:dir": "npm run build && electron-builder --win --dir && npm run postinstall"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

@@ -150,7 +150,16 @@ export async function sendRawToWindowsPrinter(printerName: string, buffer: Buffe
 
 export async function printWindowsTestReceipt(printerName: string): Promise<void> {
   const init = Buffer.from([0x1b, 0x40])
-  const line = Buffer.from('Exchange Bureau test print\r\n', 'ascii')
+  const center = Buffer.from([0x1b, 0x61, 0x01])
+  const boldOn = Buffer.from([0x1b, 0x45, 0x01])
+  const boldOff = Buffer.from([0x1b, 0x45, 0x00])
+  const left = Buffer.from([0x1b, 0x61, 0x00])
+  const rule = Buffer.from(`${'='.repeat(48)}\r\n`, 'ascii')
+  const title = Buffer.from('Exchange Bureau\r\n', 'ascii')
+  const body = Buffer.from('Printer test OK\r\n', 'ascii')
   const cut = Buffer.from([0x1d, 0x56, 0x00])
-  await sendRawToWindowsPrinter(printerName, Buffer.concat([init, line, line, cut]))
+  await sendRawToWindowsPrinter(
+    printerName,
+    Buffer.concat([init, center, boldOn, title, boldOff, rule, body, rule, left, cut])
+  )
 }

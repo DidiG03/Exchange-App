@@ -172,8 +172,8 @@ export function PrinterSettingsPanel(): React.JSX.Element {
     <section className="settings-section mx-auto max-w-xl">
       <h3 className="mb-2 text-base font-semibold text-slate-800">Thermal receipt printer</h3>
       <p className="mb-4 text-sm text-slate-600">
-        Receipts print as Albanian <strong>Mandat Konvertim Valute</strong> (invoice number, Shuma /
-        Kursi / Shuma e Konvert., boxed total, city and date). Configure your bureau name below.
+        Receipts use a formatted <strong>Mandat Konvertim Valute</strong> layout (header, currency
+        pair, table, highlighted total, city and date). Configure your bureau name below.
       </p>
 
       <form

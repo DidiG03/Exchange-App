@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from 'electron'
 import type {
   CreateTransactionInput,
   DateFilter,
+  GetTransactionsFilter,
   ExchangeRate,
   ExchangePairRate,
   GetRateHistoryOptions,
@@ -72,7 +73,9 @@ export interface ExchangeApi {
     | { success: true; data: Transaction }
     | { success: false; error: string; code?: string }
   >
-  getTransactions: (filter?: DateFilter) => Promise<Transaction[] | SessionExpiredResponse>
+  getTransactions: (
+    filter?: DateFilter | GetTransactionsFilter
+  ) => Promise<Transaction[] | SessionExpiredResponse>
   voidTransaction: (
     transactionId: number,
     reason: string
