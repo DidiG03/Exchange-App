@@ -1,8 +1,9 @@
 import { exec } from 'child_process'
 import { promisify } from 'util'
 import type { Transaction } from '../database/types'
-import type { PrintResult, PrinterSettings } from '../shared/printer-types'
-import { printEscPosReceipt } from './printer-escpos'
+import type { NetworkPrinterDevice, PrintResult, PrinterSettings } from '../shared/printer-types'
+import { printEscPosReceipt, printEscPosReceiptToNetwork } from './printer-escpos'
+import { scanNetworkPrinters } from './printer-network'
 import { getPrinterSettings, savePrinterSettings } from './settings'
 
 export { getPrinterSettings, savePrinterSettings }
@@ -40,11 +41,38 @@ export async function listSystemPrinters(): Promise<string[]> {
   return []
 }
 
+export async function listNetworkPrinters(): Promise<NetworkPrinterDevice[]> {
+  return scanNetworkPrinters()
+}
+
 export async function printTransactionReceipt(tx: Transaction): Promise<PrintResult> {
   const settings = getPrinterSettings()
 
   if (!settings.printEnabled) {
     return { success: false, error: 'Printing is disabled in settings.' }
+  }
+
+  if (settings.connectionType === 'network') {
+    if (!settings.printerHost.trim()) {
+      return {
+        success: false,
+        error: 'No network printer configured. Set the printer IP in Settings.'
+      }
+    }
+
+    try {
+      await printEscPosReceiptToNetwork(
+        settings.printerHost.trim(),
+        settings.printerPort,
+        tx
+      )
+      return { success: true }
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : 'Failed to print receipt'
+      }
+    }
   }
 
   if (!settings.printerName) {

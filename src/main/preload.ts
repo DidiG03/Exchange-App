@@ -15,7 +15,7 @@ import type {
   Transaction,
   UserListEntry
 } from '../database/types'
-import type { PrintResult, PrinterSettings } from '../shared/printer-types'
+import type { PrintResult, NetworkPrinterDevice, PrinterSettings } from '../shared/printer-types'
 import type { UpdateState } from '../shared/updater-types'
 import { SESSION_EXPIRED_CODE } from '../shared/auth-constants'
 
@@ -79,6 +79,7 @@ export interface ExchangeApi {
     | { success: false; error: string; code?: string }
   >
   listPrinters: () => Promise<string[] | SessionExpiredResponse>
+  listNetworkPrinters: () => Promise<NetworkPrinterDevice[] | SessionExpiredResponse>
   printReceipt: (transaction: Transaction) => Promise<PrintResult | SessionExpiredResponse>
   getUpdateState: () => Promise<UpdateState>
   checkForUpdates: () => Promise<UpdateState>
@@ -219,6 +220,7 @@ const api: ExchangeApi = {
   getPrinterSettings: () => invokeWithSession<PrinterSettings>('printer:getSettings'),
   savePrinterSettings: (settings) => invokeWithSession('printer:saveSettings', settings),
   listPrinters: () => invokeWithSession<string[]>('printer:list'),
+  listNetworkPrinters: () => invokeWithSession<NetworkPrinterDevice[]>('printer:listNetwork'),
   printReceipt: (transaction) => invokeWithSession<PrintResult>('printer:printReceipt', transaction),
   getUpdateState: () => ipcRenderer.invoke('update:getState'),
   checkForUpdates: () => ipcRenderer.invoke('update:check'),

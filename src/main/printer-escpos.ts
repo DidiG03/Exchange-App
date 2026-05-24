@@ -12,6 +12,7 @@ import {
 } from './receipt-format'
 import { getPrinterSettings } from './settings'
 import { loadPrinterDriver } from './printer-driver'
+import { sendRawToNetworkPrinter } from './printer-network'
 
 const LINE_WIDTH = 48
 const BOX_WIDTH = 40
@@ -136,6 +137,15 @@ function sendRawOnWindows(
       error: (error: Error) => reject(error)
     })
   })
+}
+
+export async function printEscPosReceiptToNetwork(
+  host: string,
+  port: number,
+  tx: Transaction
+): Promise<void> {
+  const buffer = buildEscPosBuffer(tx)
+  await sendRawToNetworkPrinter(host, port, buffer)
 }
 
 export async function printEscPosReceipt(

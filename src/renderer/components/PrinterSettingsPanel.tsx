@@ -1,16 +1,23 @@
 import { FormEvent, useEffect, useState } from 'react'
-import type { PrinterSettings } from '../../shared/printer-types'
+import type { NetworkPrinterDevice, PrinterSettings } from '../../shared/printer-types'
+
+const DEFAULT_SETTINGS: PrinterSettings = {
+  connectionType: 'system',
+  printerName: '',
+  printerHost: '',
+  printerPort: 9100,
+  printEnabled: true,
+  bureauName: 'KEMBIM VALUTOR',
+  city: 'Durres'
+}
 
 export function PrinterSettingsPanel(): React.JSX.Element {
-  const [settings, setSettings] = useState<PrinterSettings>({
-    printerName: '',
-    printEnabled: true,
-    bureauName: 'KEMBIM VALUTOR',
-    city: 'Durres'
-  })
+  const [settings, setSettings] = useState<PrinterSettings>(DEFAULT_SETTINGS)
   const [printers, setPrinters] = useState<string[]>([])
+  const [networkPrinters, setNetworkPrinters] = useState<NetworkPrinterDevice[]>([])
   const [loadingSettings, setLoadingSettings] = useState(true)
   const [loadingPrinters, setLoadingPrinters] = useState(false)
+  const [loadingNetworkPrinters, setLoadingNetworkPrinters] = useState(false)
   const [saving, setSaving] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -24,7 +31,18 @@ export function PrinterSettingsPanel(): React.JSX.Element {
         typeof printerSettings === 'object' &&
         'printerName' in printerSettings
       ) {
-        setSettings(printerSettings)
+        setSettings({
+          ...DEFAULT_SETTINGS,
+          ...printerSettings,
+          connectionType:
+            printerSettings.connectionType === 'network' ? 'network' : 'system',
+          printerPort:
+            typeof printerSettings.printerPort === 'number' &&
+            printerSettings.printerPort >= 1 &&
+            printerSettings.printerPort <= 65535
+              ? printerSettings.printerPort
+              : 9100
+        })
       }
       setLoadingSettings(false)
     }
@@ -38,6 +56,31 @@ export function PrinterSettingsPanel(): React.JSX.Element {
       setPrinters(available)
     }
     setLoadingPrinters(false)
+  }
+
+  async function loadNetworkPrinters(): Promise<void> {
+    setLoadingNetworkPrinters(true)
+    setError(null)
+    const available = await window.api.listNetworkPrinters()
+    if (Array.isArray(available)) {
+      setNetworkPrinters(available)
+      if (available.length === 0) {
+        setError(
+          'No LAN printers found on port 9100. Check that the printer is on the same network, powered on, and supports raw TCP printing.'
+        )
+      }
+    }
+    setLoadingNetworkPrinters(false)
+  }
+
+  function selectNetworkPrinter(device: NetworkPrinterDevice): void {
+    setSettings((current) => ({
+      ...current,
+      connectionType: 'network',
+      printerHost: device.host,
+      printerPort: device.port
+    }))
+    setError(null)
   }
 
   async function handleSave(event: FormEvent): Promise<void> {
@@ -66,6 +109,8 @@ export function PrinterSettingsPanel(): React.JSX.Element {
       </section>
     )
   }
+
+  const isNetwork = settings.connectionType === 'network'
 
   return (
     <section className="settings-section mx-auto max-w-xl">
@@ -118,51 +163,180 @@ export function PrinterSettingsPanel(): React.JSX.Element {
           </div>
         </div>
 
-        <div>
-          <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-            <label htmlFor="printer-name" className="text-sm font-medium text-slate-700">
-              Printer name
-            </label>
-            <button
-              type="button"
-              onClick={() => void loadPrinters()}
-              disabled={loadingPrinters}
-              className="text-xs font-medium text-navy-800 hover:underline disabled:opacity-50"
-            >
-              {loadingPrinters ? 'Scanning…' : printers.length ? 'Refresh list' : 'Load printer list'}
-            </button>
-          </div>
-          {printers.length > 0 ? (
-            <select
-              id="printer-name"
-              value={settings.printerName}
-              onChange={(e) => setSettings((s) => ({ ...s, printerName: e.target.value }))}
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
-            >
-              <option value="">Select a printer…</option>
-              {printers.map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-          ) : (
+        <fieldset className="space-y-3 rounded-lg border border-slate-200 p-4">
+          <legend className="px-1 text-sm font-medium text-slate-700">Printer connection</legend>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
             <input
-              id="printer-name"
-              type="text"
-              value={settings.printerName}
-              onChange={(e) => setSettings((s) => ({ ...s, printerName: e.target.value }))}
-              placeholder="e.g. POS-58 — or click Load printer list"
-              className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+              type="radio"
+              name="printer-connection"
+              checked={!isNetwork}
+              onChange={() => setSettings((s) => ({ ...s, connectionType: 'system' }))}
             />
-          )}
-          {printers.length === 0 && !loadingPrinters && (
-            <p className="mt-1 text-xs text-slate-500">
-              Type the printer name as shown in Windows, or use Load printer list (can take a few
-              seconds on Windows).
+            Local printer (installed in Windows)
+          </label>
+          <label className="flex items-center gap-2 text-sm text-slate-700">
+            <input
+              type="radio"
+              name="printer-connection"
+              checked={isNetwork}
+              onChange={() => setSettings((s) => ({ ...s, connectionType: 'network' }))}
+            />
+            Network printer (LAN / Wi‑Fi)
+          </label>
+        </fieldset>
+
+        {!isNetwork ? (
+          <div>
+            <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+              <label htmlFor="printer-name" className="text-sm font-medium text-slate-700">
+                Printer name
+              </label>
+              <button
+                type="button"
+                onClick={() => void loadPrinters()}
+                disabled={loadingPrinters}
+                className="text-xs font-medium text-navy-800 hover:underline disabled:opacity-50"
+              >
+                {loadingPrinters
+                  ? 'Scanning…'
+                  : printers.length
+                    ? 'Refresh list'
+                    : 'Load printer list'}
+              </button>
+            </div>
+            {printers.length > 0 ? (
+              <select
+                id="printer-name"
+                value={settings.printerName}
+                onChange={(e) => setSettings((s) => ({ ...s, printerName: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+              >
+                <option value="">Select a printer…</option>
+                {printers.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="printer-name"
+                type="text"
+                value={settings.printerName}
+                onChange={(e) => setSettings((s) => ({ ...s, printerName: e.target.value }))}
+                placeholder="e.g. POS-58 — or click Load printer list"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+              />
+            )}
+            {printers.length === 0 && !loadingPrinters && (
+              <p className="mt-1 text-xs text-slate-500">
+                Type the printer name as shown in Windows, or use Load printer list (can take a few
+                seconds).
+              </p>
+            )}
+          </div>
+        ) : (
+          <div className="space-y-4">
+            <div>
+              <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+                <span className="text-sm font-medium text-slate-700">LAN printers</span>
+                <button
+                  type="button"
+                  onClick={() => void loadNetworkPrinters()}
+                  disabled={loadingNetworkPrinters}
+                  className="text-xs font-medium text-navy-800 hover:underline disabled:opacity-50"
+                >
+                  {loadingNetworkPrinters
+                    ? 'Scanning network…'
+                    : networkPrinters.length
+                      ? 'Scan again'
+                      : 'Scan LAN for printers'}
+                </button>
+              </div>
+              {loadingNetworkPrinters && (
+                <p className="text-xs text-slate-500">
+                  Scanning your local network for thermal printers on port 9100. This can take up to
+                  10 seconds.
+                </p>
+              )}
+              {networkPrinters.length > 0 && (
+                <ul className="max-h-40 space-y-1 overflow-y-auto rounded-lg border border-slate-200 p-2">
+                  {networkPrinters.map((device) => {
+                    const selected =
+                      settings.printerHost === device.host && settings.printerPort === device.port
+                    return (
+                      <li key={device.label}>
+                        <button
+                          type="button"
+                          onClick={() => selectNetworkPrinter(device)}
+                          className={`w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                            selected
+                              ? 'bg-navy-900 text-white'
+                              : 'bg-slate-50 text-slate-800 hover:bg-slate-100'
+                          }`}
+                        >
+                          {device.label}
+                        </button>
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
+              {!loadingNetworkPrinters && networkPrinters.length === 0 && (
+                <p className="text-xs text-slate-500">
+                  Scans devices on your subnet with raw printing port 9100 open (common for ESC/POS
+                  thermal printers).
+                </p>
+              )}
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-[2fr_1fr]">
+              <div>
+                <label
+                  htmlFor="printer-host"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Printer IP address
+                </label>
+                <input
+                  id="printer-host"
+                  type="text"
+                  inputMode="decimal"
+                  value={settings.printerHost}
+                  onChange={(e) => setSettings((s) => ({ ...s, printerHost: e.target.value }))}
+                  placeholder="192.168.1.50"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="printer-port"
+                  className="mb-1.5 block text-sm font-medium text-slate-700"
+                >
+                  Port
+                </label>
+                <input
+                  id="printer-port"
+                  type="number"
+                  min={1}
+                  max={65535}
+                  value={settings.printerPort}
+                  onChange={(e) =>
+                    setSettings((s) => ({
+                      ...s,
+                      printerPort: Number(e.target.value) || 9100
+                    }))
+                  }
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2.5 text-sm outline-none focus:border-navy-700 focus:ring-2 focus:ring-navy-700"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-slate-500">
+              Pick a printer from the scan list or enter the IP manually. Port 9100 is the default
+              for network receipt printers.
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
         {error && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-700" role="alert">

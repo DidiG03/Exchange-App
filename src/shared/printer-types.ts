@@ -1,5 +1,16 @@
+export type PrinterConnectionType = 'system' | 'network'
+
+export interface NetworkPrinterDevice {
+  host: string
+  port: number
+  label: string
+}
+
 export interface PrinterSettings {
+  connectionType: PrinterConnectionType
   printerName: string
+  printerHost: string
+  printerPort: number
   printEnabled: boolean
   bureauName: string
   city: string

@@ -29,6 +29,7 @@ import { isSessionExpiredError, requireSession, SessionExpiredError } from './au
 import { SESSION_EXPIRED_CODE } from '../shared/auth-constants'
 import {
   getPrinterSettings,
+  listNetworkPrinters,
   listSystemPrinters,
   printTransactionReceipt,
   savePrinterSettings
@@ -93,6 +94,7 @@ const IPC_CHANNELS = [
   'printer:getSettings',
   'printer:saveSettings',
   'printer:list',
+  'printer:listNetwork',
   'printer:printReceipt',
   'update:getState',
   'update:check',
@@ -351,6 +353,15 @@ export function registerIpcHandlers(): void {
     try {
       requireSession(token)
       return await listSystemPrinters()
+    } catch (error) {
+      return toIpcError(error)
+    }
+  })
+
+  ipcMain.handle('printer:listNetwork', async (_event, token: unknown) => {
+    try {
+      requireSession(token)
+      return await listNetworkPrinters()
     } catch (error) {
       return toIpcError(error)
     }
